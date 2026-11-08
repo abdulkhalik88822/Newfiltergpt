@@ -31,6 +31,11 @@ class Database:
         self.filename_col = self.db.filename
         self.movie_updates = self.db.movie_updates
         self.connection = self.db.connections
+        self.clone_bots = self.db.clone_bots
+        self.clone_premium_users = self.db.clone_premium_users
+        self.clone_verification = self.db.clone_verification
+        self.clone_verify_ids = self.db.clone_verify_ids
+        self.clone_group_settings = self.db.clone_group_settings
 
     async def add_name(self, filename):
         if await self.movie_updates.find_one({'_id': filename}):
@@ -239,31 +244,36 @@ class Database:
         self._prem_cache.pop(user_data.get("id"), None)
         await self.users.update_one({"id": user_data["id"]}, {"$set": user_data}, upsert=True)
   
-    async def get_notcopy_user(self, user_id):
+    async def get_notcopy_user(self, user_id, bot_id=None):
         user_id = int(user_id)
-        user = await self.misc.find_one({"user_id": user_id})
+        collection = self.misc if bot_id is None else self.clone_verification
+        query = {"user_id": user_id} if bot_id is None else {"_id": f"{int(bot_id)}:{user_id}"}
+        user = await collection.find_one(query)
         if not user:
             res = {
                 "user_id": user_id,
                 "last_verified": datetime.datetime(2020, 5, 17, 0, 0, 0, tzinfo=TZ),
                 "second_time_verified": datetime.datetime(2019, 5, 17, 0, 0, 0, tzinfo=TZ),
             }
-            await self.misc.insert_one(res)
+            if bot_id is not None:
+                res["_id"] = f"{int(bot_id)}:{user_id}"
+            await collection.insert_one(res)
             return res
         return user
 
-    async def update_notcopy_user(self, user_id, value:dict):
+    async def update_notcopy_user(self, user_id, value:dict, bot_id=None):
         user_id = int(user_id)
-        myquery = {"user_id": user_id}
+        collection = self.misc if bot_id is None else self.clone_verification
+        myquery = {"user_id": user_id} if bot_id is None else {"_id": f"{int(bot_id)}:{user_id}"}
         newvalues = {"$set": value}
-        return await self.misc.update_one(myquery, newvalues)
+        return await collection.update_one(myquery, newvalues, upsert=bot_id is not None)
 
-    async def is_user_verified(self, user_id):
-        user = await self.get_notcopy_user(user_id)
+    async def is_user_verified(self, user_id, bot_id=None):
+        user = await self.get_notcopy_user(user_id, bot_id)
         try:
             pastDate = user["last_verified"]
         except Exception:
-            user = await self.get_notcopy_user(user_id)
+            user = await self.get_notcopy_user(user_id, bot_id)
             pastDate = user["last_verified"]
         pastDate = pastDate.astimezone(TZ)
         current_time = datetime.datetime.now(tz=TZ)
@@ -272,12 +282,12 @@ class Database:
         total_seconds = time_diff.total_seconds()
         return total_seconds <= seconds_since_midnight
 
-    async def user_verified(self, user_id):
-        user = await self.get_notcopy_user(user_id)
+    async def user_verified(self, user_id, bot_id=None):
+        user = await self.get_notcopy_user(user_id, bot_id)
         try:
             pastDate = user["second_time_verified"]
         except Exception:
-            user = await self.get_notcopy_user(user_id)
+            user = await self.get_notcopy_user(user_id, bot_id)
             pastDate = user["second_time_verified"]
         pastDate = pastDate.astimezone(TZ)
         current_time = datetime.datetime.now(tz=TZ)
@@ -286,16 +296,16 @@ class Database:
         total_seconds = time_diff.total_seconds()
         return total_seconds <= seconds_since_midnight
 
-    async def use_second_shortener(self, user_id, time):
-        user = await self.get_notcopy_user(user_id)
+    async def use_second_shortener(self, user_id, time, bot_id=None):
+        user = await self.get_notcopy_user(user_id, bot_id)
         if not user.get("second_time_verified"):
-            await self.update_notcopy_user(user_id, {"second_time_verified":datetime.datetime(2019, 5, 17, 0, 0, 0, tzinfo=TZ)})
-            user = await self.get_notcopy_user(user_id)
-        if await self.is_user_verified(user_id):
+            await self.update_notcopy_user(user_id, {"second_time_verified":datetime.datetime(2019, 5, 17, 0, 0, 0, tzinfo=TZ)}, bot_id)
+            user = await self.get_notcopy_user(user_id, bot_id)
+        if await self.is_user_verified(user_id, bot_id):
             try:
                 pastDate = user["last_verified"]
             except Exception:
-                user = await self.get_notcopy_user(user_id)
+                user = await self.get_notcopy_user(user_id, bot_id)
                 pastDate = user["last_verified"]
             pastDate = pastDate.astimezone(TZ)
             current_time = datetime.datetime.now(tz=TZ)
@@ -306,16 +316,16 @@ class Database:
                 return second_time < pastDate
         return False
 
-    async def use_third_shortener(self, user_id, time):
-        user = await self.get_notcopy_user(user_id)
+    async def use_third_shortener(self, user_id, time, bot_id=None):
+        user = await self.get_notcopy_user(user_id, bot_id)
         if not user.get("third_time_verified"):
-            await self.update_notcopy_user(user_id, {"third_time_verified":datetime.datetime(2018, 5, 17, 0, 0, 0, tzinfo=TZ)})
-            user = await self.get_notcopy_user(user_id)
-        if await self.user_verified(user_id):
+            await self.update_notcopy_user(user_id, {"third_time_verified":datetime.datetime(2018, 5, 17, 0, 0, 0, tzinfo=TZ)}, bot_id)
+            user = await self.get_notcopy_user(user_id, bot_id)
+        if await self.user_verified(user_id, bot_id):
             try:
                 pastDate = user["second_time_verified"]
             except Exception:
-                user = await self.get_notcopy_user(user_id)
+                user = await self.get_notcopy_user(user_id, bot_id)
                 pastDate = user["second_time_verified"]
             pastDate = pastDate.astimezone(TZ)
             current_time = datetime.datetime.now(tz=TZ)
@@ -326,17 +336,24 @@ class Database:
                 return second_time < pastDate
         return False
    
-    async def create_verify_id(self, user_id: int, hash):
+    async def create_verify_id(self, user_id: int, hash, bot_id=None):
         res = {"user_id": user_id, "hash":hash, "verified":False}
-        return await self.verify_id.insert_one(res)
+        collection = self.verify_id if bot_id is None else self.clone_verify_ids
+        if bot_id is not None:
+            res["_id"] = f"{int(bot_id)}:{int(user_id)}:{hash}"
+            res["bot_id"] = int(bot_id)
+        return await collection.insert_one(res)
 
-    async def get_verify_id_info(self, user_id: int, hash):
-        return await self.verify_id.find_one({"user_id": user_id, "hash": hash})
+    async def get_verify_id_info(self, user_id: int, hash, bot_id=None):
+        collection = self.verify_id if bot_id is None else self.clone_verify_ids
+        query = {"user_id": user_id, "hash": hash} if bot_id is None else {"_id": f"{int(bot_id)}:{int(user_id)}:{hash}"}
+        return await collection.find_one(query)
 
-    async def update_verify_id_info(self, user_id, hash, value: dict):
-        myquery = {"user_id": user_id, "hash": hash}
+    async def update_verify_id_info(self, user_id, hash, value: dict, bot_id=None):
+        collection = self.verify_id if bot_id is None else self.clone_verify_ids
+        myquery = {"user_id": user_id, "hash": hash} if bot_id is None else {"_id": f"{int(bot_id)}:{int(user_id)}:{hash}"}
         newvalues = { "$set": value }
-        return await self.verify_id.update_one(myquery, newvalues)
+        return await collection.update_one(myquery, newvalues)
         
     async def has_premium_access(self, user_id):
         now_ts = datetime.datetime.now().timestamp()
@@ -467,6 +484,90 @@ class Database:
 
     async def update_maintenance_status(self, bot_id, enable):
         await self.update_bot_setting(bot_id, 'MAINTENANCE', enable)
+
+    async def add_clone_bot(self, record):
+        await self.clone_bots.insert_one(record)
+
+    async def get_clone_bot(self, bot_id):
+        return await self.clone_bots.find_one({'_id': str(bot_id)})
+
+    async def get_user_clone_bots(self, owner_id):
+        cursor = self.clone_bots.find({'owner_id': int(owner_id)}).sort('created_at', -1)
+        return await cursor.to_list(length=100)
+
+    async def get_enabled_clone_bots(self):
+        cursor = self.clone_bots.find({'enabled': True}).sort('created_at', 1)
+        return await cursor.to_list(length=100)
+
+    async def count_clone_bots(self, owner_id=None):
+        query = {} if owner_id is None else {'owner_id': int(owner_id)}
+        return await self.clone_bots.count_documents(query)
+
+    async def update_clone_bot(self, bot_id, owner_id, updates):
+        allowed = {'enabled', 'welcome', 'status', 'updated_at'}
+        safe_updates = {key: value for key, value in updates.items() if key in allowed}
+        if not safe_updates:
+            return None
+        return await self.clone_bots.update_one(
+            {'_id': str(bot_id), 'owner_id': int(owner_id)},
+            {'$set': safe_updates},
+        )
+
+    async def update_clone_settings(self, bot_id, owner_id, settings):
+        return await self.clone_bots.update_one(
+            {'_id': str(bot_id), 'owner_id': int(owner_id)},
+            {'$set': {'settings': settings, 'updated_at': datetime.datetime.utcnow()}},
+        )
+
+    async def get_clone_group_settings(self, bot_id, group_id):
+        record = await self.clone_group_settings.find_one({'_id': f'{int(bot_id)}:{int(group_id)}'})
+        return dict(record.get('settings', {})) if record else {}
+
+    async def set_clone_group_setting(self, bot_id, group_id, key, value):
+        return await self.clone_group_settings.update_one(
+            {'_id': f'{int(bot_id)}:{int(group_id)}'},
+            {'$set': {f'settings.{key}': value, 'bot_id': int(bot_id), 'group_id': int(group_id)}},
+            upsert=True,
+        )
+
+    async def delete_clone_group_setting(self, bot_id, group_id, key):
+        return await self.clone_group_settings.update_one(
+            {'_id': f'{int(bot_id)}:{int(group_id)}'},
+            {'$unset': {f'settings.{key}': ''}},
+        )
+
+    async def has_clone_premium_access(self, bot_id, user_id):
+        record = await self.clone_premium_users.find_one({
+            '_id': f'{int(bot_id)}:{int(user_id)}',
+            'expiry_time': {'$gt': datetime.datetime.utcnow()},
+        })
+        return record is not None
+
+    async def get_clone_premium_user(self, bot_id, user_id):
+        return await self.clone_premium_users.find_one({'_id': f'{int(bot_id)}:{int(user_id)}'})
+
+    async def add_clone_premium_user(self, bot_id, user_id, expiry_time):
+        key = f'{int(bot_id)}:{int(user_id)}'
+        return await self.clone_premium_users.update_one(
+            {'_id': key},
+            {'$set': {'bot_id': int(bot_id), 'user_id': int(user_id), 'expiry_time': expiry_time}},
+            upsert=True,
+        )
+
+    async def remove_clone_premium_user(self, bot_id, user_id):
+        return await self.clone_premium_users.delete_one({'_id': f'{int(bot_id)}:{int(user_id)}'})
+
+    async def get_clone_premium_users(self, bot_id):
+        cursor = self.clone_premium_users.find({'bot_id': int(bot_id)}).sort('expiry_time', -1)
+        return await cursor.to_list(length=500)
+
+    async def delete_clone_premium_users(self, bot_id):
+        return await self.clone_premium_users.delete_many({'bot_id': int(bot_id)})
+
+    async def delete_clone_bot(self, bot_id, owner_id):
+        return await self.clone_bots.delete_one(
+            {'_id': str(bot_id), 'owner_id': int(owner_id)}
+        )
      
 db = Database(DATABASE_URI, DATABASE_NAME)    
 if MULTIPLE_DB and DATABASE_URI2:
