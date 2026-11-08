@@ -1,5 +1,6 @@
 import logging
-from utils import LimitedDict, get_random_mix_id, get_size, is_subscribed, is_req_subscribed, group_setting_buttons, get_poster, get_posterx, temp, get_settings, save_group_settings, get_cap, imdb, is_check_admin, extract_request_content, clean_filename, generate_season_variations, clean_search_text, get_settings_text
+import html
+from utils import LimitedDict, get_random_mix_id, get_size, is_subscribed, is_req_subscribed, group_setting_buttons, get_poster, get_posterx, temp, get_settings, get_force_sub_channels, get_clone_star_plans, get_bot_username, get_bot_name, get_bot_link, save_group_settings, get_cap, imdb, is_check_admin, extract_request_content, clean_filename, generate_season_variations, clean_search_text, get_settings_text
 from rapidfuzz import process
 from dreamxbotz.util.file_properties import get_name, get_hash
 from urllib.parse import quote_plus
@@ -10,7 +11,7 @@ from pyrogram.errors import MessageIdInvalid, UserIsBlocked, MessageNotModified,
 from pyrogram import Client, filters, enums
 from pyrogram.types import LinkPreviewOptions, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from info import (
-    ADMINS, AUTH_CHANNELS, AUTH_REQ_CHANNELS, BIN_CHANNEL, DELETE_TIME,
+    ADMINS, AUTH_REQ_CHANNELS, BIN_CHANNEL, DELETE_TIME,
     EMOJI_MODE, GRP_LNK, LANDSCAPE_POSTER, LANGUAGES, LOG_CHANNEL, MAX_B_TN, MSG_ALRT,
     MULTIPLE_DB, NO_RESULTS_MSG, OWNER_LNK, OWNER_UPI_ID, PICS, PICS_URL, QR_CODE, QUALITIES,
     REACTIONS, REQST_CHANNEL, SEASONS, STAR_PREMIUM_PLANS, SUBSCRIPTION, SUPPORT_CHAT_ID,
@@ -52,7 +53,7 @@ async def give_filter(client, message):
             pass
     asyncio.create_task(mdb.update_top_messages(message.from_user.id, message.text))
     if message.chat.id != SUPPORT_CHAT_ID:
-        settings = await get_settings(message.chat.id)
+        settings = await get_settings(message.chat.id, client=client)
         try:
             if settings['auto_ffilter']:
                 if re.search(r'https?://\S+|www\.\S+|t\.me/\S+', message.text):
@@ -61,8 +62,8 @@ async def give_filter(client, message):
                     return await message.delete()
                 await auto_filter(client, message)
         except KeyError:
-            await save_group_settings(message.chat.id, 'auto_ffilter', True)
-            settings = await get_settings(message.chat.id)
+            await save_group_settings(message.chat.id, 'auto_ffilter', True, client=client)
+            settings = await get_settings(message.chat.id, client=client)
             if settings['auto_ffilter']:
                 await auto_filter(client, message) 
         except Exception as e:
@@ -82,7 +83,7 @@ async def give_filter(client, message):
 
 @Client.on_message(filters.private & filters.text & filters.incoming & ~filters.regex(r"^/") & ~filters.regex(r"(https?://)?(t\.me|telegram\.me|telegram\.dog)/"))
 async def pm_text(client, message):
-    bot_id = temp.ME
+    bot_id = getattr(client.me, "id", temp.ME)
     content = message.text
     user = message.from_user.first_name
     user_id = message.from_user.id
@@ -170,7 +171,7 @@ async def next_page(client, query):
     if not files:
         return
     temp.GETALL[key] = files
-    settings = await get_settings(query.message.chat.id)
+    settings = await get_settings(query.message.chat.id, client=client)
     if settings.get('button'):
         btn = [
             [
@@ -192,7 +193,7 @@ async def next_page(client, query):
         btn.insert(0,
                    [
                        InlineKeyboardButton(
-                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                        InlineKeyboardButton(
                            "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
 
@@ -213,7 +214,7 @@ async def next_page(client, query):
                    )
         btn.insert(0, [
             InlineKeyboardButton(
-                "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
             InlineKeyboardButton("Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
         ])
     if ULTRA_FAST_MODE:
@@ -288,7 +289,7 @@ async def next_page(client, query):
                         ],
                     )
         except KeyError:
-            await save_group_settings(query.message.chat.id, 'max_btn', True)
+            await save_group_settings(query.message.chat.id, 'max_btn', True, client=client)
             if 0 < offset <= 10:
                 off_set = 0
             elif offset == 0:
@@ -448,7 +449,7 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
         await query.answer("🚫 ɴᴏ ꜰɪʟᴇꜱ ᴡᴇʀᴇ ꜰᴏᴜɴᴅ 🚫", show_alert=1)
         return
     temp.GETALL[key] = files
-    settings = await get_settings(message.chat.id)
+    settings = await get_settings(message.chat.id, client=client)
     if settings.get('button'):
         btn = [
             [
@@ -470,7 +471,7 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
         btn.insert(0,
                    [
                        InlineKeyboardButton(
-                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                        InlineKeyboardButton(
                            "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
                    ])
@@ -489,7 +490,7 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
         btn.insert(0,
                    [
                        InlineKeyboardButton(
-                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                        InlineKeyboardButton(
                            "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
 
@@ -509,7 +510,7 @@ async def filter_qualities_cb_handler(client: Client, query: CallbackQuery):
                         text=f"1/{math.ceil(int(total_results)/int(MAX_B_TN))}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{offset}")]
                 )
         except KeyError:
-            await save_group_settings(query.message.chat.id, 'max_btn', True)
+            await save_group_settings(query.message.chat.id, 'max_btn', True, client=client)
             btn.append(
 
                 [InlineKeyboardButton("ᴘᴀɢᴇ", callback_data="pages"), InlineKeyboardButton(
@@ -606,7 +607,7 @@ async def filter_languages_cb_handler(client: Client, query: CallbackQuery):
         await query.answer("🚫 ɴᴏ ꜰɪʟᴇꜱ ᴡᴇʀᴇ ꜰᴏᴜɴᴅ 🚫", show_alert=1)
         return
     temp.GETALL[key] = files
-    settings = await get_settings(message.chat.id)
+    settings = await get_settings(message.chat.id, client=client)
     if settings.get('button'):
         btn = [
             [
@@ -628,7 +629,7 @@ async def filter_languages_cb_handler(client: Client, query: CallbackQuery):
         btn.insert(0,
                    [
                        InlineKeyboardButton(
-                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                        InlineKeyboardButton(
                            "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
                    ]
@@ -647,7 +648,7 @@ async def filter_languages_cb_handler(client: Client, query: CallbackQuery):
         btn.insert(0,
                    [
                        InlineKeyboardButton(
-                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                           "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                        InlineKeyboardButton(
                            "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
                    ])
@@ -666,7 +667,7 @@ async def filter_languages_cb_handler(client: Client, query: CallbackQuery):
                             text=f"1/{math.ceil(int(total_results)/int(MAX_B_TN))}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{offset}")
                     ])
         except KeyError:
-            await save_group_settings(query.message.chat.id, 'max_btn', True)
+            await save_group_settings(query.message.chat.id, 'max_btn', True, client=client)
             btn.append(
                 [
                     InlineKeyboardButton("ᴘᴀɢᴇ", callback_data="pages"), InlineKeyboardButton(
@@ -756,7 +757,7 @@ async def filter_seasons_cb_handler(client: Client, query: CallbackQuery):
         return await query.answer("🚫 ɴᴏ ꜰɪʟᴇꜱ ꜰᴏᴜɴᴅ 🚫", show_alert=True)
 
     temp.GETALL[key] = files
-    settings = await get_settings(chat_id)
+    settings = await get_settings(chat_id, client=client)
     btn: list[list[InlineKeyboardButton]] = []
     if settings.get("button"):
         btn.extend(
@@ -783,7 +784,7 @@ async def filter_seasons_cb_handler(client: Client, query: CallbackQuery):
         0,
         [
             InlineKeyboardButton(
-                "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
             InlineKeyboardButton("Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS),
         ],
     )
@@ -801,7 +802,7 @@ async def filter_seasons_cb_handler(client: Client, query: CallbackQuery):
                         text=f"1/{math.ceil(int(total_results)/int(MAX_B_TN))}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{n_offset}")]
                 )
         except KeyError:
-            await save_group_settings(query.message.chat.id, 'max_btn', True)
+            await save_group_settings(query.message.chat.id, 'max_btn', True, client=client)
             btn.append(
                 [InlineKeyboardButton("ᴘᴀɢᴇ", callback_data="pages"), InlineKeyboardButton(
                     text=f"1/{math.ceil(int(total_results)/10)}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{n_offset}")]
@@ -865,21 +866,21 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 return await query.answer(script.ALRT_TXT.format(query.from_user.first_name), show_alert=True)
         except Exception:
             pass
-        await query.answer(url=f"https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file_id}")
+        await query.answer(url=f"https://t.me/{get_bot_username(client)}?start=file_{query.message.chat.id}_{file_id}")
 
     elif query.data.startswith("sendfiles"):
         ident, key = query.data.split("#")
-        settings = await get_settings(query.message.chat.id)
+        settings = await get_settings(query.message.chat.id, client=client)
         try:
-            await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=allfiles_{query.message.chat.id}_{key}")
+            await query.answer(url=f"https://telegram.me/{get_bot_username(client)}?start=allfiles_{query.message.chat.id}_{key}")
             return
         except UserIsBlocked:
             await query.answer('Uɴʙʟᴏᴄᴋ ᴛʜᴇ ʙᴏᴛ ᴍᴀʜɴ !', show_alert=True)
         except PeerIdInvalid:
-            await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=sendfiles3_{key}")
+            await query.answer(url=f"https://telegram.me/{get_bot_username(client)}?start=sendfiles3_{key}")
         except Exception as e:
             logger.error("Error answering sendfiles callback: %s", e)
-            await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=sendfiles4_{key}")
+            await query.answer(url=f"https://telegram.me/{get_bot_username(client)}?start=sendfiles4_{key}")
 
 
 
@@ -895,8 +896,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
             ident, kk, file_id = query.data.split("#")
             btn = []
             chat = file_id.split("_")[0]
-            settings = await get_settings(chat)
-            fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else [])+ AUTH_CHANNELS)) 
+            settings = await get_settings(chat, client=client)
+            fsub_channels = await get_force_sub_channels(client, settings)
             if fsub_channels and AUTH_REQ_CHANNELS:
                 res1, res2 = await asyncio.gather(
                     is_subscribed(client, query.from_user.id, fsub_channels),
@@ -920,7 +921,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     show_alert=True
                 )
                 return
-            await query.answer(url=f"https://t.me/{temp.U_NAME}?start={kk}_{file_id}")
+            await query.answer(url=f"https://t.me/{get_bot_username(client)}?start={kk}_{file_id}")
             if query.message.chat.type == enums.ChatType.PRIVATE:
                 try:
                     await query.message.delete()
@@ -973,7 +974,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer("ʏᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ʀɪɢʜᴛꜱ ᴛᴏ ᴅᴏ ᴛʜɪꜱ !", show_alert=True)
             return
         title = query.message.chat.title
-        settings = await get_settings(grp_id)
+        settings = await get_settings(grp_id, client=client)
         if settings is not None:
             btn = await group_setting_buttons(int(grp_id))
             reply_markup = InlineKeyboardMarkup(btn)
@@ -996,10 +997,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer("Yᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ sᴜғғɪᴄɪᴀɴᴛ ʀɪɢʜᴛs ᴛᴏ ᴅᴏ ᴛʜɪs !", show_alert=True)
             return
         title = query.message.chat.title
-        settings = await get_settings(grp_id)
+        settings = await get_settings(grp_id, client=client)
         btn2 = [[
             InlineKeyboardButton(
-                "ᴄʜᴇᴄᴋ ᴍʏ ᴅᴍ 🗳️", url=f"telegram.me/{temp.U_NAME}")
+                "ᴄʜᴇᴄᴋ ᴍʏ ᴅᴍ 🗳️", url=f"telegram.me/{get_bot_username(client)}")
         ]]
         reply_markup = InlineKeyboardMarkup(btn2)
         await query.message.edit_text(f"<b>ʏᴏᴜʀ sᴇᴛᴛɪɴɢs ᴍᴇɴᴜ ғᴏʀ {title} ʜᴀs ʙᴇᴇɴ sᴇɴᴛ ᴛᴏ ʏᴏᴜ ʙʏ ᴅᴍ.</b>")
@@ -1177,7 +1178,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif query.data == "start":
         buttons = [[
-                    InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://telegram.me/{temp.U_NAME}?startgroup=true')
+                    InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://telegram.me/{get_bot_username(client)}?startgroup=true')
                 ],[
                     InlineKeyboardButton(' ʜᴇʟᴘ 📢', callback_data='help'),
                     InlineKeyboardButton(' ᴀʙᴏᴜᴛ 📖', callback_data='about')
@@ -1212,7 +1213,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         except Exception:
             pass
         await query.message.edit_text(
-            text=script.START_TXT.format(query.from_user.mention, gtxt, temp.U_NAME, temp.B_NAME),
+            text=script.START_TXT.format(query.from_user.mention, gtxt, get_bot_username(client), get_bot_name(client)),
             reply_markup=reply_markup,
             parse_mode=enums.ParseMode.HTML
         )
@@ -1262,7 +1263,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
         await query.message.edit_text(
-            text=script.ABOUT_TXT.format(temp.U_NAME, temp.B_NAME, OWNER_LNK),
+            text=script.ABOUT_TXT.format(get_bot_username(client), get_bot_name(client), OWNER_LNK),
             reply_markup=reply_markup,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
             parse_mode=enums.ParseMode.HTML
@@ -1329,7 +1330,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
             )
 
     elif query.data == "premium_info":
+        if getattr(client, "is_clone", False) and not (getattr(client, "clone_settings", {}) or {}).get("premium_enabled", True):
+            return await query.answer("This clone's premium plans are currently disabled.", show_alert=True)
         try:
+            premium_caption = script.BPREMIUM_TXT
+            if getattr(client, "is_clone", False):
+                custom_text = (getattr(client, "clone_settings", {}) or {}).get("premium_text")
+                if custom_text:
+                    premium_caption = f"<b>{html.escape(custom_text)}</b>"
             btn = [[
                 InlineKeyboardButton('• ʙᴜʏ ᴘʀᴇᴍɪᴜᴍ •', callback_data='buy_info'),
             ],[
@@ -1342,7 +1350,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await client.edit_message_media(
                 chat_id=query.message.chat.id,
                 message_id=query.message.id,
-                media=InputMediaPhoto(media=SUBSCRIPTION, caption=script.BPREMIUM_TXT, parse_mode=enums.ParseMode.HTML),
+                media=InputMediaPhoto(media=SUBSCRIPTION, caption=premium_caption, parse_mode=enums.ParseMode.HTML),
                 reply_markup=reply_markup
             )
         except Exception:
@@ -1350,6 +1358,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
 
     elif query.data == "buy_info":
+        if getattr(client, "is_clone", False) and not (getattr(client, "clone_settings", {}) or {}).get("premium_enabled", True):
+            return await query.answer("This clone's premium plans are currently disabled.", show_alert=True)
         try:
             btn = [[
                 InlineKeyboardButton('ꜱᴛᴀʀ', callback_data='star_info'),
@@ -1385,18 +1395,27 @@ async def cb_handler(client: Client, query: CallbackQuery):
             logger.exception("Exception in 'upi_info' callback")
 
     elif query.data == "star_info":
+        if getattr(client, "is_clone", False) and not (getattr(client, "clone_settings", {}) or {}).get("premium_enabled", True):
+            return await query.answer("This clone's premium plans are currently disabled.", show_alert=True)
         try:
+            star_plans = get_clone_star_plans(client, STAR_PREMIUM_PLANS)
+            if not star_plans:
+                return await query.answer("No Star plans are configured for this bot.", show_alert=True)
             btn = [
                 InlineKeyboardButton(f"{stars}⭐", callback_data=f"buy_{stars}")
-                for stars, days in STAR_PREMIUM_PLANS.items()
+                for stars, days in star_plans.items()
             ]
             buttons = [btn[i:i + 2] for i in range(0, len(btn), 2)]
             buttons.append([InlineKeyboardButton("⋞ ʙᴀᴄᴋ", callback_data="buy_info")])
             reply_markup = InlineKeyboardMarkup(buttons)
+            plan_summary = "\n\n<b>Available plans:</b>\n" + "\n".join(
+                f"⭐ {stars} Stars — {duration}" for stars, duration in star_plans.items()
+            )
+            plan_caption = script.PREMIUM_STAR_TEXT.replace("</b>", f"{plan_summary}</b>")
             await client.edit_message_media(
                 chat_id=query.message.chat.id,
                 message_id=query.message.id,
-                media=InputMediaPhoto(media=SUBSCRIPTION, caption=script.PREMIUM_STAR_TEXT, parse_mode=enums.ParseMode.HTML),
+                media=InputMediaPhoto(media=SUBSCRIPTION, caption=plan_caption, parse_mode=enums.ParseMode.HTML),
                 reply_markup=reply_markup
             )
         except Exception:
@@ -1421,12 +1440,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer(script.NT_ADMIN_ALRT_TXT, show_alert=True)
             return
         if status == "True":
-            await save_group_settings(int(grp_id), set_type, False)
+            await save_group_settings(int(grp_id), set_type, False, client=client)
             await query.answer("ᴏꜰꜰ ✗")
         else:
-            await save_group_settings(int(grp_id), set_type, True)
+            await save_group_settings(int(grp_id), set_type, True, client=client)
             await query.answer("ᴏɴ ✓")
-        settings = await get_settings(int(grp_id))
+        settings = await get_settings(int(grp_id), client=client)
         if settings is not None:
             btn = await group_setting_buttons(int(grp_id))
             reply_markup = InlineKeyboardMarkup(btn)
@@ -1472,7 +1491,7 @@ async def auto_filter(client, msg, spoll=False):
                 search = re.sub(r"[:']", "", search)
                 search = re.sub(r"\s+", " ", search).strip()
                 files, offset, total_results = await get_search_results(message.chat.id, search, offset=0, filter=True)
-                settings = await get_settings(message.chat.id)
+                settings = await get_settings(message.chat.id, client=client)
                 if not files:
                     if settings.get("spell_check"):
                         ai_sts = await m.edit('🤖 ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ, ᴀɪ ɪꜱ ᴄʜᴇᴄᴋɪɴɢ ʏᴏᴜʀ ꜱᴘᴇʟʟɪɴɢ...')
@@ -1489,7 +1508,7 @@ async def auto_filter(client, msg, spoll=False):
                         try:
                             await m.edit(script.MVE_NT_FND)
                             if settings.get('auto_delete'):
-                                asyncio.create_task(_schedule_delete(m, message, DELETE_TIME))
+                                asyncio.create_task(_schedule_delete(m, message, settings.get('delete_time', DELETE_TIME)))
                         except Exception:
                             pass
                         return
@@ -1499,9 +1518,10 @@ async def auto_filter(client, msg, spoll=False):
             message = msg.message.reply_to_message
             search, files, offset, total_results = spoll
             m = await message.reply_text(script.SEARCHING_TXT.format(search))
-            settings = await get_settings(message.chat.id)
+                settings = await get_settings(message.chat.id, client=client)
             await msg.message.delete()
-        key = f"{message.chat.id}-{message.id}"
+        bot_scope = getattr(getattr(client, "me", None), "id", temp.ME)
+        key = f"{bot_scope}-{message.chat.id}-{message.id}"
         FRESH[key] = search
         temp.GETALL[key] = files
         req = message.from_user.id if message.from_user else 0
@@ -1530,7 +1550,7 @@ async def auto_filter(client, msg, spoll=False):
             btn.insert(0,
                        [
                            InlineKeyboardButton(
-                               "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                               "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                            InlineKeyboardButton(
                                "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
 
@@ -1550,7 +1570,7 @@ async def auto_filter(client, msg, spoll=False):
             btn.insert(0,
                        [
                            InlineKeyboardButton(
-                               "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{temp.U_NAME}?start=premium", style=enums.ButtonStyle.PRIMARY),
+                               "ʀᴇᴍᴏᴠᴇ ᴀᴅs", url=f"https://t.me/{get_bot_username(client)}?start=premium", style=enums.ButtonStyle.PRIMARY),
                            InlineKeyboardButton(
                                "Sᴇɴᴅ Aʟʟ", callback_data=f"sendfiles#{key}", style=enums.ButtonStyle.SUCCESS)
                        ])
@@ -1575,7 +1595,7 @@ async def auto_filter(client, msg, spoll=False):
                                 text=f"1/{math.ceil(int(total_results)/int(MAX_B_TN))}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{offset}")]
                         )
                 except KeyError:
-                    await save_group_settings(message.chat.id, 'max_btn', True)
+                    await save_group_settings(message.chat.id, 'max_btn', True, client=client)
                     btn.append(
                         [InlineKeyboardButton("ᴘᴀɢᴇ", callback_data="pages"), InlineKeyboardButton(
                             text=f"1/{math.ceil(int(total_results)/10)}", callback_data="pages"), InlineKeyboardButton(text="ɴᴇxᴛ ⋟", callback_data=f"next_{req}_{key}_{offset}")]
@@ -1583,6 +1603,20 @@ async def auto_filter(client, msg, spoll=False):
         else:
             btn.append([InlineKeyboardButton(
                 text="↭ ɴᴏ ᴍᴏʀᴇ ᴘᴀɢᴇꜱ ᴀᴠᴀɪʟᴀʙʟᴇ ↭", callback_data="pages")])
+
+        custom_button_rows = settings.get("custom_buttons") or []
+        if custom_button_rows:
+            for button_row in custom_button_rows:
+                btn.append([
+                    InlineKeyboardButton(button["text"], url=button["url"])
+                    for button in button_row[:2]
+                    if button.get("text") and button.get("url")
+                ])
+        else:
+            custom_button_text = settings.get("custom_button_text")
+            custom_button_url = settings.get("custom_button_url")
+            if custom_button_text and custom_button_url:
+                btn.append([InlineKeyboardButton(custom_button_text[:40], url=custom_button_url)])
 
         if settings.get('imdb'):
             imdb = await get_posterx(search, file=(files[0]).file_name) if TMDB_POSTER else await get_poster(search, file=(files[0]).file_name)
@@ -1632,24 +1666,24 @@ async def auto_filter(client, msg, spoll=False):
             if not settings.get('button'):
                 cap += "\n\n<b><u>Your Requested Files Are Here</u></b>\n\n"
                 for idx, file in enumerate(files, start=1):
-                    cap += f"<b>\n{idx}. <a href='https://telegram.me/{temp.U_NAME}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
+                    cap += f"<b>\n{idx}. <a href='https://telegram.me/{get_bot_username(client)}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
         else:
             temp.IMDB_CAP[message.from_user.id] = None
             if ULTRA_FAST_MODE:
                 if settings.get('button'):
-                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or temp.B_LINK or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
+                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or get_bot_link(client) or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
                 else:
-                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or temp.B_LINK or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
+                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or get_bot_link(client) or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
                     for idx, file in enumerate(files, start=1):
-                        cap += f"<b>\n{idx}. <a href='https://telegram.me/{temp.U_NAME}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
+                        cap += f"<b>\n{idx}. <a href='https://telegram.me/{get_bot_username(client)}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
             else:
                 if settings.get('button'):
-                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or temp.B_LINK or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
+                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or get_bot_link(client) or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
                 else:
-                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or temp.B_LINK or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
+                    cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or get_bot_link(client) or 'ᴅʀᴇᴀᴍxʙᴏᴛᴢ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
 
                     for idx, file in enumerate(files, start=1):
-                        cap += f"<b>\n{idx}. <a href='https://telegram.me/{temp.U_NAME}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
+                        cap += f"<b>\n{idx}. <a href='https://telegram.me/{get_bot_username(client)}?start=file_{message.chat.id}_{file.file_id}'>[{get_size(file.file_size)}] {clean_filename(file.file_name)}\n</a></b>"
         sent = None
         try:
             if imdb and imdb.get('poster'):
@@ -1684,13 +1718,13 @@ async def auto_filter(client, msg, spoll=False):
             return
         try:
             if settings.get('auto_delete'):
-                asyncio.create_task(_schedule_delete(sent, message, DELETE_TIME))
+                asyncio.create_task(_schedule_delete(sent, message, settings.get('delete_time', DELETE_TIME)))
         except KeyError:
             try:
-                await save_group_settings(message.chat.id, 'auto_delete', True)
+                await save_group_settings(message.chat.id, 'auto_delete', True, client=client)
             except Exception:
                 pass
-            asyncio.create_task(_schedule_delete(sent, message, DELETE_TIME))
+            asyncio.create_task(_schedule_delete(sent, message, settings.get('delete_time', DELETE_TIME)))
         return
     except Exception as e:
         logger.exception("Error in auto_filter: %s", e)

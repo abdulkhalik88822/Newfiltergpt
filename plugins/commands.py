@@ -24,7 +24,7 @@ from info import (
     LOG_CHANNEL, SHORTENER_API, SHORTENER_API2, SHORTENER_API3, SHORTENER_WEBSITE, SHORTENER_WEBSITE2, SHORTENER_WEBSITE3,
     TZ
 )
-from utils import get_settings, save_group_settings, is_subscribed, is_req_subscribed, get_size, get_shortlink, is_check_admin, temp, get_readable_time, get_time, generate_settings_text, clean_filename, get_random_mix_id
+from utils import get_settings, get_force_sub_channels, has_bot_premium_access, get_bot_username, get_bot_name, get_bot_link, save_group_settings, is_subscribed, is_req_subscribed, get_size, get_shortlink, is_check_admin, temp, get_readable_time, get_time, generate_settings_text, clean_filename, get_random_mix_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,19 +45,21 @@ async def start(client, message):
         if len(m.command) == 2 and m.command[1].startswith(('notcopy', 'sendall')):
             _, userid, verify_id, file_id = m.command[1].split("_", 3)
             user_id = int(userid)
-            grp_id = temp.VERIFICATIONS.get(user_id, 0)
-            settings = await get_settings(grp_id)         
-            verify_id_info = await db.get_verify_id_info(user_id, verify_id)
+            clone_id = getattr(client, "clone_bot_id", None)
+            verification_context = (clone_id, user_id) if clone_id is not None else user_id
+            grp_id = temp.VERIFICATIONS.get(verification_context, 0)
+            settings = await get_settings(grp_id, client=client)         
+            verify_id_info = await db.get_verify_id_info(user_id, verify_id, clone_id)
             if not verify_id_info or verify_id_info["verified"]:
                 return await message.reply(script.LINK_EXPIRED_TXT)  
 
-            if await db.user_verified(user_id):
+            if await db.user_verified(user_id, clone_id):
                 key = "third_time_verified"
             else:
-                key = "second_time_verified" if await db.is_user_verified(user_id) else "last_verified"
+                key = "second_time_verified" if await db.is_user_verified(user_id, clone_id) else "last_verified"
             current_time = datetime.now(tz=TZ)
-            await db.update_notcopy_user(user_id, {key:current_time})
-            await db.update_verify_id_info(user_id, verify_id, {"verified":True})
+            await db.update_notcopy_user(user_id, {key:current_time}, clone_id)
+            await db.update_verify_id_info(user_id, verify_id, {"verified":True}, clone_id)
             if key == "third_time_verified": 
                 num = 3 
             else: 
@@ -67,9 +69,9 @@ async def start(client, message):
             else:
                 msg = script.SECOND_VERIFY_COMPLETE_TEXT if key == "second_time_verified" else script.VERIFY_COMPLETE_TEXT
             if message.command[1].startswith('sendall'):
-                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
+                verifiedfiles = f"https://telegram.me/{get_bot_username(client)}?start=allfiles_{grp_id}_{file_id}"
             else:
-                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
+                verifiedfiles = f"https://telegram.me/{get_bot_username(client)}?start=file_{grp_id}_{file_id}"
             await client.send_message(settings['log'], script.VERIFIED_LOG_TEXT.format(m.from_user.mention, user_id, datetime.now(TZ).strftime('%d %B %Y'), num))
             btn = [[
                 InlineKeyboardButton("✅ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ ✅", url=verifiedfiles),
@@ -87,12 +89,12 @@ async def start(client, message):
             return         
         if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
             buttons = [[
-                        InlineKeyboardButton('❤️ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ❤️', url=f'http://t.me/{temp.U_NAME}?startgroup=true')
+                        InlineKeyboardButton('❤️ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ❤️', url=f'http://t.me/{get_bot_username(client)}?startgroup=true')
                     ],[
                         InlineKeyboardButton('🍁 Update Channel 🍁', url=UPDATE_CHNL_LNK)
                       ]]
             reply_markup = InlineKeyboardMarkup(buttons)
-            await message.reply(script.GSTART_TXT.format(message.from_user.mention if message.from_user else message.chat.title, temp.U_NAME, temp.B_NAME), reply_markup=reply_markup, link_preview_options=LinkPreviewOptions(is_disabled=True))
+            await message.reply(script.GSTART_TXT.format(message.from_user.mention if message.from_user else message.chat.title, get_bot_username(client), get_bot_name(client)), reply_markup=reply_markup, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
             await asyncio.sleep(2) 
             if not await db.get_chat(message.chat.id):
@@ -105,13 +107,15 @@ async def start(client, message):
             await client.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(message.from_user.id, message.from_user.mention))
         if len(message.command) != 2:
             buttons = [[
-                        InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://t.me/{temp.U_NAME}?startgroup=true')
+                        InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://t.me/{get_bot_username(client)}?startgroup=true')
                     ],[
                         InlineKeyboardButton(' ʜᴇʟᴘ 📢', callback_data='help'),
                         InlineKeyboardButton(' ᴀʙᴏᴜᴛ 📖', callback_data='about')
                     ],[
                         InlineKeyboardButton('ᴛᴏᴘ sᴇᴀʀᴄʜɪɴɢ ⭐', callback_data="topsearch"),
                         InlineKeyboardButton('ᴜᴘɢʀᴀᴅᴇ 🎟', callback_data="premium_info"),
+                    ],[
+                        InlineKeyboardButton('🤖 CREATE / MANAGE MY CLONES', callback_data='clone_home')
                     ]]
             reply_markup = InlineKeyboardMarkup(buttons)
             current_time = datetime.now(TZ)
@@ -134,13 +138,13 @@ async def start(client, message):
             try:
                 await message.reply_photo(
                     photo=PIC,
-                    caption=script.START_TXT.format(message.from_user.mention, gtxt, temp.U_NAME, temp.B_NAME),
+                    caption=script.START_TXT.format(message.from_user.mention, gtxt, get_bot_username(client), get_bot_name(client)),
                     reply_markup=reply_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
             except Exception:
                 await message.reply_text(
-                    text=script.START_TXT.format(message.from_user.mention, gtxt, temp.U_NAME, temp.B_NAME),
+                    text=script.START_TXT.format(message.from_user.mention, gtxt, get_bot_username(client), get_bot_name(client)),
                     reply_markup=reply_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
@@ -148,7 +152,7 @@ async def start(client, message):
 
         if len(message.command) == 2 and message.command[1] in ["subscribe", "error", "okay", "help"]:
             buttons = [[
-                        InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://t.me/{temp.U_NAME}?startgroup=true')
+                        InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://t.me/{get_bot_username(client)}?startgroup=true')
                     ],[
                         InlineKeyboardButton(' ʜᴇʟᴘ 📢', callback_data='help'),
                         InlineKeyboardButton(' ᴀʙᴏᴜᴛ 📖', callback_data='about')
@@ -177,13 +181,13 @@ async def start(client, message):
             try:
                 await message.reply_photo(
                     photo=PIC,
-                    caption=script.START_TXT.format(message.from_user.mention, gtxt, temp.U_NAME, temp.B_NAME),
+                    caption=script.START_TXT.format(message.from_user.mention, gtxt, get_bot_username(client), get_bot_name(client)),
                     reply_markup=reply_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
             except Exception:
                 await message.reply_text(
-                    text=script.START_TXT.format(message.from_user.mention, gtxt, temp.U_NAME, temp.B_NAME),
+                    text=script.START_TXT.format(message.from_user.mention, gtxt, get_bot_username(client), get_bot_name(client)),
                     reply_markup=reply_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
@@ -274,12 +278,12 @@ async def start(client, message):
                 pass
 
         file_details_task = asyncio.create_task(get_file_details(decoded_file_id))
-        if not await db.has_premium_access(message.from_user.id): 
+        if not await has_bot_premium_access(client, message.from_user.id): 
             try:
                 btn = []
                 chat = grp_id
-                settings      = await get_settings(chat)
-                fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else [])+ AUTH_CHANNELS)) 
+                settings      = await get_settings(chat, client=client)
+                fsub_channels = await get_force_sub_channels(client, settings)
 
                 if fsub_channels and AUTH_REQ_CHANNELS:
                     res1, res2 = await asyncio.gather(
@@ -312,24 +316,28 @@ async def start(client, message):
                 logger.error(f"❗️ Force Sub Error:\n\n{repr(e)}")
 
         user_id = m.from_user.id
-        if not await db.has_premium_access(user_id):
+        if not await has_bot_premium_access(client, user_id):
             try:
                 grp_id = int(grp_id)
-                settings = await get_settings(grp_id)
+                settings = await get_settings(grp_id, client=client)
                 if settings.get("is_verify", IS_VERIFY):
+                    clone_id = getattr(client, "clone_bot_id", None)
                     user_verified, is_second_shortener, is_third_shortener = await asyncio.gather(
-                        db.is_user_verified(user_id),
-                        db.use_second_shortener(user_id, settings.get('verify_time', TWO_VERIFY_GAP)),
-                        db.use_third_shortener(user_id, settings.get('third_verify_time', THREE_VERIFY_GAP))
+                        db.is_user_verified(user_id, clone_id),
+                        db.use_second_shortener(user_id, settings.get('verify_time', TWO_VERIFY_GAP), clone_id),
+                        db.use_third_shortener(user_id, settings.get('third_verify_time', THREE_VERIFY_GAP), clone_id)
                     )
+                    if getattr(client, "is_clone", False) and not settings.get("second_verification", True):
+                        is_second_shortener = is_third_shortener = False
                     if not user_verified or is_second_shortener or is_third_shortener:
                         verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
-                        await db.create_verify_id(user_id, verify_id)
-                        temp.VERIFICATIONS[user_id] = grp_id
+                        await db.create_verify_id(user_id, verify_id, clone_id)
+                        verification_context = (clone_id, user_id) if clone_id is not None else user_id
+                        temp.VERIFICATIONS[verification_context] = grp_id
                         if message.command[1].startswith('allfiles'):
-                            verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=sendall_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
+                            verify = await get_shortlink(f"https://telegram.me/{get_bot_username(client)}?start=sendall_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener, client=client)
                         else:
-                            verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=notcopy_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
+                            verify = await get_shortlink(f"https://telegram.me/{get_bot_username(client)}?start=notcopy_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener, client=client)
                         if is_third_shortener:
                             howtodownload = settings.get('tutorial_3', TUTORIAL_3)
                         else:
@@ -340,7 +348,7 @@ async def start(client, message):
                             InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
                         ]]
                         reply_markup=InlineKeyboardMarkup(buttons)
-                        if await db.user_verified(user_id): 
+                        if await db.user_verified(user_id, clone_id): 
                             msg = script.THIRDT_VERIFICATION_TEXT
                         else:            
                             msg = script.SECOND_VERIFICATION_TEXT if is_second_shortener else script.VERIFICATION_TEXT
@@ -374,7 +382,7 @@ async def start(client, message):
                     cover = files1.cover
                     size = get_size(files1.file_size)
                     f_caption = files1.caption
-                    settings = await get_settings(int(grp_id))
+                    settings = await get_settings(int(grp_id), client=client)
                     DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
                     if DREAMX_CAPTION:
                         try:
@@ -403,12 +411,15 @@ async def start(client, message):
                             reply_markup=InlineKeyboardMarkup(btn)
                         )
                     send_allfiles.append(msg)
-                k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
+                k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
 
-                await asyncio.sleep(DELETE_TIME)
-                if send_allfiles:
-                    await client.delete_messages(chat_id=message.from_user.id, message_ids=[x.id for x in send_allfiles])
-                await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
+                if settings.get('auto_delete'):
+                    await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
+                    if send_allfiles:
+                        await client.delete_messages(chat_id=message.from_user.id, message_ids=[x.id for x in send_allfiles])
+                    await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
+                else:
+                    await k.delete()
                 return
             except MediaEmpty:
                 await message.reply('<b>⚠️ ꜰɪʟᴇ ɪꜱ ᴄᴜʀʀᴇɴᴛʟʏ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ. ᴘʟᴇᴀꜱᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ!</b>')
@@ -417,7 +428,7 @@ async def start(client, message):
                 logger.exception("Error in allfiles handler: %s", e)
                 return
 
-        settings = await get_settings(int(grp_id))
+        settings = await get_settings(int(grp_id), client=client)
         if not files_:
             file_id = decoded_file_id
             try:
@@ -450,7 +461,7 @@ async def start(client, message):
                 title = clean_filename(file.file_name)
                 size=get_size(file.file_size)
                 f_caption = f"<code>{title}</code>"
-                settings = await get_settings(int(grp_id))
+                settings = await get_settings(int(grp_id), client=client)
                 DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
                 if DREAMX_CAPTION:
                     try:
@@ -459,10 +470,13 @@ async def start(client, message):
                         logger.warning("Failed to format caption: %s", e)
                         f_caption = f"<code>{title}</code>"
                 await msg.edit_caption(f_caption, reply_markup=InlineKeyboardMarkup(btn))
-                k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
-                await asyncio.sleep(DELETE_TIME)
-                await msg.delete()
-                await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+                k = await msg.reply(script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
+                if settings.get('auto_delete'):
+                    await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
+                    await msg.delete()
+                    await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+                else:
+                    await k.delete()
                 return
             except MediaEmpty:
                 return await message.reply('<b>⚠️ ꜰɪʟᴇ ɪꜱ ᴄᴜʀʀᴇɴᴛʟʏ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ. ᴘʟᴇᴀꜱᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ!</b>')
@@ -476,7 +490,7 @@ async def start(client, message):
         size = get_size(files.file_size)
         cover = files.cover if files.cover else None
         f_caption = files.caption
-        settings = await get_settings(int(grp_id))            
+        settings = await get_settings(int(grp_id), client=client)            
         DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
         if DREAMX_CAPTION:
             try:
@@ -505,10 +519,13 @@ async def start(client, message):
                 reply_markup=InlineKeyboardMarkup(btn)
             )
         
-        k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
-        await asyncio.sleep(DELETE_TIME)
-        await msg.delete()
-        await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+        k = await msg.reply(script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
+        if settings.get('auto_delete'):
+            await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
+            await msg.delete()
+            await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+        else:
+            await k.delete()
         return
     except StopPropagation:
         raise
@@ -526,7 +543,7 @@ async def stream_buttons(user_id: int, file_id: str):
             [InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=UPDATE_CHNL_LNK)]
         ]
     elif STREAM_MODE and PREMIUM_STREAM_MODE:
-        if not await db.has_premium_access(user_id):
+        if not await has_bot_premium_access(client, user_id):
             return [
                 [InlineKeyboardButton('🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data='prestream')],
                 [InlineKeyboardButton('ℹ️ ᴠɪᴇᴡ ᴀᴜᴅɪᴏ & ꜱᴜʙꜱ ɪɴꜰᴏ ℹ️', callback_data='prestream')],
@@ -751,7 +768,7 @@ async def save_template(client, message):
         return await sts.edit("⚠️ ɴᴏ ᴛᴇᴍᴘʟᴀᴛᴇ ᴘʀᴏᴠɪᴅᴇᴅ!")
 
     template = message.text.split(" ", 1)[1]
-    await save_group_settings(group_id, 'template', template)
+    await save_group_settings(group_id, 'template', template, client=client)
     await sts.edit(
         f"✅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴜᴘᴅᴀᴛᴇᴅ ᴛᴇᴍᴘʟᴀᴛᴇ ꜰᴏʀ <code>{title}</code> ᴛᴏ:\n\n{template}"
     )
@@ -1080,7 +1097,7 @@ async def save_caption(client, message):
         caption = message.text.split(" ", 1)[1]
     except Exception:
         return await message.reply_text("<code>ɢɪᴠᴇ ᴍᴇ ᴀ ᴄᴀᴘᴛɪᴏɴ ᴀʟᴏɴɢ ᴡɪᴛʜ ɪᴛ.\n\nᴇxᴀᴍᴘʟᴇ -\n\nꜰᴏʀ ꜰɪʟᴇ ɴᴀᴍᴇ ꜱᴇɴᴅ <code>{file_name}</code>\nꜰᴏʀ ꜰɪʟᴇ ꜱɪᴢᴇ ꜱᴇɴᴅ <code>{file_size}</code>\n\n<code>/set_caption {file_name}</code></code>")
-    await save_group_settings(grp_id, 'caption', caption)
+    await save_group_settings(grp_id, 'caption', caption, client=client)
     await message.reply_text(f"ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴄʜᴀɴɢᴇᴅ ᴄᴀᴘᴛɪᴏɴ ꜰᴏʀ {title}\n\nᴄᴀᴘᴛɪᴏɴ - {caption}", link_preview_options=LinkPreviewOptions(is_disabled=True))
     await client.send_message(LOG_CHANNEL, f"#Set_Caption\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 
@@ -1109,7 +1126,7 @@ async def set_tutorial(client, message: Message):
     else:
         tutorial_key = f"tutorial_{message.command[0].split('_', 2)[2]}"
 
-    await save_group_settings(grp_id, tutorial_key, tutorial_link)
+    await save_group_settings(grp_id, tutorial_key, tutorial_link, client=client)
     invite_link = await client.export_chat_invite_link(grp_id)
     await message.reply_text(
         f"<b>ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴄʜᴀɴɢᴇᴅ {tutorial_key.replace('_', ' ').title()} ꜰᴏʀ {title}</b>\n\n"
@@ -1143,9 +1160,9 @@ async def handle_shortner_command(c, m, shortner_key, api_key, log_prefix, fallb
     try:
         URL = m.command[1]
         API = m.command[2]
-        await save_group_settings(grp_id, shortner_key, URL)
-        await save_group_settings(grp_id, api_key, API)
-        await save_group_settings(grp_id, custom_flag, True)
+        await save_group_settings(grp_id, shortner_key, URL, client=c)
+        await save_group_settings(grp_id, api_key, API, client=c)
+        await save_group_settings(grp_id, custom_flag, True, client=c)
         await m.reply_text(f"<b><u>✅ sʜᴏʀᴛɴᴇʀ ᴀᴅᴅᴇᴅ</u>\n\nꜱɪᴛᴇ - `{URL}`\nᴀᴘɪ - `{API}`</b>")
         user_id = m.from_user.id
         user_info = f"@{m.from_user.username}" if m.from_user.username else f"{m.from_user.mention}"
@@ -1158,9 +1175,9 @@ async def handle_shortner_command(c, m, shortner_key, api_key, log_prefix, fallb
         )
         await c.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception as e:
-        await save_group_settings(grp_id, shortner_key, fallback_url)
-        await save_group_settings(grp_id, api_key, fallback_api)
-        await save_group_settings(grp_id, custom_flag, False)
+        await save_group_settings(grp_id, shortner_key, fallback_url, client=c)
+        await save_group_settings(grp_id, api_key, fallback_api, client=c)
+        await save_group_settings(grp_id, custom_flag, False, client=c)
         await m.reply_text(
             f"<b><u>💢 ᴇʀʀᴏʀ ᴏᴄᴄᴜʀᴇᴅ!</u>\n\n"
             f"ᴅᴇꜰᴀᴜʟᴛ ꜱʜᴏʀᴛɴᴇʀ ᴀᴘᴘʟɪᴇᴅ\n"
@@ -1208,7 +1225,7 @@ async def set_log(client, message):
         await t.delete()
     except Exception as e:
         return await message.reply_text(f'<b><u>😐 ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜɪs ʙᴏᴛ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ...</u>\n\n💔 ᴇʀʀᴏʀ - <code>{e}</code></b>')
-    await save_group_settings(grp_id, 'log', log)
+    await save_group_settings(grp_id, 'log', log, client=client)
     await message.reply_text(f"<b>✅ sᴜᴄᴄᴇssꜰᴜʟʟʏ sᴇᴛ ʏᴏᴜʀ ʟᴏɢ ᴄʜᴀɴɴᴇʟ ꜰᴏʀ {title}\n\nɪᴅ - `{log}`</b>", link_preview_options=LinkPreviewOptions(is_disabled=True))
     user_id = message.from_user.id
     user_info = f"@{message.from_user.username}" if message.from_user.username else f"{message.from_user.mention}"
@@ -1232,7 +1249,7 @@ async def set_time(client, message):
         time = int(message.text.split(" ", 1)[1])
     except Exception:
         return await message.reply_text("<b>ᴄᴏᴍᴍᴀɴᴅ ɪɴᴄᴏᴍᴘʟᴇᴛᴇ\n\nᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ ᴛʜɪꜱ - <code>/set_time 600</code> [ ᴛɪᴍᴇ ᴍᴜꜱᴛ ʙᴇ ɪɴ ꜱᴇᴄᴏɴᴅꜱ ]</b>")   
-    await save_group_settings(grp_id, 'verify_time', time)
+    await save_group_settings(grp_id, 'verify_time', time, client=client)
     await message.reply_text(f"<b>✅️ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ꜱᴇᴛ 2ɴᴅ ᴠᴇʀɪꜰʏ ᴛɪᴍᴇ ꜰᴏʀ {title}\n\nᴛɪᴍᴇ - <code>{time}</code></b>")
     await client.send_message(LOG_CHANNEL, f"#Set_2nd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 @Client.on_message(filters.command('set_time_2'))
@@ -1249,7 +1266,7 @@ async def set_time_2(client, message):
         time = int(message.text.split(" ", 1)[1])
     except Exception:
         return await message.reply_text("<b>ᴄᴏᴍᴍᴀɴᴅ ɪɴᴄᴏᴍᴘʟᴇᴛᴇ\n\nᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ ᴛʜɪꜱ - <code>/set_time 3600</code> [ ᴛɪᴍᴇ ᴍᴜꜱᴛ ʙᴇ ɪɴ ꜱᴇᴄᴏɴᴅꜱ ]</b>")   
-    await save_group_settings(grp_id, 'third_verify_time', time)
+    await save_group_settings(grp_id, 'third_verify_time', time, client=client)
     await message.reply_text(f"<b>✅️ ꜱᴜᴄᴄESꜱꜰᴜʟʟʏ ꜱᴇᴛ 3ʀᴅ ᴠᴇʀɪꜰʏ ᴛɪᴍᴇ ꜰᴏʀ {title}\n\nᴛɪᴍᴇ - <code>{time}</code></b>")
     await client.send_message(LOG_CHANNEL, f"#Set_3rd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 
@@ -1263,7 +1280,7 @@ async def all_settings(client, message):
     if not await is_check_admin(client, grp_id, message.from_user.id):
         return await message.reply_text(script.NT_ADMIN_ALRT_TXT)
     try:
-        settings = await get_settings(grp_id)
+        settings = await get_settings(grp_id, client=client)
     except Exception as e:
         return await message.reply_text(f"<b>⚠️ ᴇʀʀᴏʀ ꜰᴇᴛᴄʜɪɴɢ ꜱᴇᴛᴛɪɴɢꜱ:</b>\n<code>{e}</code>")
     text = generate_settings_text(settings, title)
@@ -1303,12 +1320,12 @@ async def reset_group_callback(client, callback_query):
         'is_verify': IS_VERIFY,
         'fsub': AUTH_CHANNELS
     }
-    current = await get_settings(grp_id)
+    current = await get_settings(grp_id, client=client)
     if current == defaults:
         return await callback_query.answer("✅ ꜱᴇᴛᴛɪɴɢꜱ ᴀʟʀᴇᴀᴅʏ ᴅᴇꜰᴀᴜʟᴛ.", show_alert=True)
     for key, value in defaults.items():
-        await save_group_settings(grp_id, key, value)
-    updated = await get_settings(grp_id)
+        await save_group_settings(grp_id, key, value, client=client)
+    updated = await get_settings(grp_id, client=client)
     title = callback_query.message.chat.title
     text = generate_settings_text(updated, title, reset_done=True)
     buttons = [
@@ -1327,10 +1344,10 @@ async def verify(client, message):
             grpid = message.chat.id
             command_text = message.text.split(' ')[1] if len(message.text.split(' ')) > 1 else None
             if command_text == "off":
-                await save_group_settings(grpid, 'is_verify', False)
+                await save_group_settings(grpid, 'is_verify', False, client=client)
                 return await message.reply_text("✓ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅɪsᴀʙʟᴇᴅ.")
             elif command_text == "on":
-                await save_group_settings(grpid, 'is_verify', True)
+                await save_group_settings(grpid, 'is_verify', True, client=client)
                 return await message.reply_text("✗ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴇɴᴀʙʟᴇᴅ.")
             else:
                 return await message.reply_text("ʜɪ, ᴛᴏ ᴇɴᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify on</code> ᴀɴᴅ ᴛᴏ ᴅɪsᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify off</code>.")
@@ -1376,7 +1393,7 @@ async def set_fsub(client, message):
                 return await message.reply_text(f"{id} ɪs ɴᴏᴛ ᴀ ᴄʜᴀɴɴᴇʟ.")
             channel_titles.append(f"{chat.title} (`{id}`)")
             channels += f'{chat.title}\n'
-        await save_group_settings(grp_id, 'fsub', fsub_ids)
+        await save_group_settings(grp_id, 'fsub', fsub_ids, client=client)
         await message.reply_text(f"sᴜᴄᴄᴇssғᴜʟʟʏ sᴇᴛ ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟ(ꜱ) ғᴏʀ {title} ᴛᴏ\n\n{channels}")
         mention = message.from_user.mention if message.from_user else "Unknown"
         await client.send_message(
@@ -1442,12 +1459,12 @@ async def remove_fsub(client, message):
                 "• /remove_fsub ɪᴅ1 ɪᴅ2 ... → ʀᴇᴍᴏᴠᴇ sᴘᴇᴄɪғɪᴄ ᴄʜᴀɴɴᴇʟ ɪᴅs"
             )
         option = args[1].strip()
-        settings = await get_settings(grp_id)
+        settings = await get_settings(grp_id, client=client)
         cr_fsubs = settings.get("fsub", []) if settings else []
         if not cr_fsubs:
             return await message.reply_text("ɴᴏ ғsᴜʙ ᴄʜᴀɴɴᴇʟs ᴀʀᴇ sᴇᴛ ғᴏʀ ᴛʜɪs ɢʀᴏᴜᴘ.")
         if option.lower() == "all":
-            await save_group_settings(grp_id, 'fsub', [])
+            await save_group_settings(grp_id, 'fsub', [], client=client)
             await message.reply_text(f"✅ ᴀʟʟ ғsᴜʙ ᴄʜᴀɴɴᴇʟs ʀᴇᴍᴏᴠᴇᴅ ғᴏʀ {title}")
             return await client.send_message(
                 LOG_CHANNEL,
@@ -1462,7 +1479,7 @@ async def remove_fsub(client, message):
         r_id = [cid for cid in cr_fsubs if cid in remove_ids]
         if not r_id:
             return await message.reply_text("ɴᴏɴᴇ ᴏғ ᴛʜᴇ ɢɪᴠᴇɴ ɪᴅs ᴡᴇʀᴇ ғᴏᴜɴᴅ ɪɴ ᴛʜᴇ ᴄᴜʀʀᴇɴᴛ ғsᴜʙ ʟɪsᴛ.")
-        await save_group_settings(grp_id, 'fsub', new_fsubs)
+        await save_group_settings(grp_id, 'fsub', new_fsubs, client=client)
         r_t = []
         for cid in r_id:
             try:

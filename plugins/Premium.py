@@ -4,7 +4,7 @@ import logging
 import datetime
 from Script import script 
 from info import ADMINS, PREMIUM_LOGS, STAR_PREMIUM_PLANS, SUBSCRIPTION, TZ
-from utils import get_seconds, temp
+from utils import get_seconds, get_clone_star_plans, temp
 from database.users_chats_db import db 
 import asyncio
 from pyrogram import Client, filters 
@@ -43,7 +43,7 @@ async def myplan(client, message):
     try:
         user = message.from_user.mention
         user_id = message.from_user.id
-        data = await db.get_user(user_id)
+        data = await db.get_clone_premium_user(client.clone_bot_id, user_id) if getattr(client, "is_clone", False) else await db.get_user(user_id)
 
         if data and data.get("expiry_time"):
             expiry = data.get("expiry_time")
@@ -220,8 +220,11 @@ async def plan(client, message):
 @Client.on_callback_query(filters.regex(r"buy_\d+"))
 async def premium_button(client, callback_query: CallbackQuery):
     try:
+        if getattr(client, "is_clone", False) and not (getattr(client, "clone_settings", {}) or {}).get("premium_enabled", True):
+            return await callback_query.answer("Premium plans are disabled for this bot.", show_alert=True)
+        plans = get_clone_star_plans(client, STAR_PREMIUM_PLANS)
         amount = int(callback_query.data.split("_")[1])
-        if amount in STAR_PREMIUM_PLANS:
+        if amount in plans:
             try:
                 buttons = [[
                     InlineKeyboardButton("Pay with Stars ??", pay=True, style=enums.ButtonStyle.PRIMARY)
@@ -232,7 +235,7 @@ async def premium_button(client, callback_query: CallbackQuery):
                 await client.send_invoice(
                     chat_id=callback_query.message.chat.id,
                     title="Premium Subscription",
-                    description=f"Pay {amount} Star And Get Premium For {STAR_PREMIUM_PLANS[amount]}",
+                    description=f"Pay {amount} Star And Get Premium For {plans[amount]}",
                     payload=f"dreamxpremium_{amount}",
                     currency="XTR",
                     prices=[
@@ -266,18 +269,24 @@ async def pre_checkout_handler(client, query: PreCheckoutQuery):
 @Client.on_message(filters.successful_payment)
 async def successful_premium_payment(client, message):
     try:
+        plans = get_clone_star_plans(client, STAR_PREMIUM_PLANS)
         amount = int(message.successful_payment.total_amount)
         user_id = message.from_user.id
         time_zone = datetime.datetime.now(TZ)
         current_time = time_zone.strftime("%d-%m-%Y | %I:%M:%S %p") 
-        if amount in STAR_PREMIUM_PLANS:
-            time = STAR_PREMIUM_PLANS[amount]
+        if amount in plans:
+            time = plans[amount]
             seconds = await get_seconds(time)
             if seconds > 0:
-                expiry_time = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
-                user_data = {"id": user_id, "expiry_time": expiry_time}
-                await db.update_user(user_data)
-                data = await db.get_user(user_id)
+                expiry_base = datetime.datetime.utcnow() if getattr(client, "is_clone", False) else datetime.datetime.now()
+                expiry_time = expiry_base + datetime.timedelta(seconds=seconds)
+                if getattr(client, "is_clone", False):
+                    await db.add_clone_premium_user(client.clone_bot_id, user_id, expiry_time)
+                    data = await db.get_clone_premium_user(client.clone_bot_id, user_id)
+                else:
+                    user_data = {"id": user_id, "expiry_time": expiry_time}
+                    await db.update_user(user_data)
+                    data = await db.get_user(user_id)
                 expiry = data.get("expiry_time")
                 expiry_str_in_ist = expiry.astimezone(TZ).strftime("%d-%m-%Y | %I:%M:%S %p")    
                 await message.reply(text=f"Thank you For Purchasing Premium Service Using Star ✅\n\nSubscription Time - {time}\nExpire In - {expiry_str_in_ist}", link_preview_options=LinkPreviewOptions(is_disabled=True))                
