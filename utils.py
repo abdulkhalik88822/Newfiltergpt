@@ -421,8 +421,10 @@ async def get_posterx(query, bulk=False, id=False, file=None):
         'url': details.get('tmdb_url')
     }
     
-async def get_shortlink(link, grp_id, is_second_shortener=False, is_third_shortener=False):
-    settings = await get_settings(grp_id)
+async def get_shortlink(link, grp_id, is_second_shortener=False, is_third_shortener=False, client=None):
+    settings = await get_settings(grp_id, client=client)
+    if client and getattr(client, "is_clone", False) and not settings.get("shortener_enabled", True):
+        return link
     if is_third_shortener:             
         api, site = settings['api_three'], settings['shortner_three']
     else:
@@ -437,7 +439,7 @@ async def get_shortlink(link, grp_id, is_second_shortener=False, is_third_shorte
         link = await shortzy.get_quick_link(link)
     return link
 
-async def get_settings(group_id):
+async def get_settings(group_id, client=None):
     try:
         group_id = int(group_id)
     except (ValueError, TypeError):
@@ -446,18 +448,76 @@ async def get_settings(group_id):
     if not settings:
         settings = await db.get_settings(group_id)
         temp.SETTINGS[group_id] = settings.copy()
+    if client and getattr(client, "is_clone", False):
+        settings = settings.copy()
+        settings.update(getattr(client, "clone_settings", {}) or {})
+        group_overrides = await db.get_clone_group_settings(client.clone_bot_id, group_id)
+        settings.update(group_overrides)
+        settings["_clone_group_overrides"] = group_overrides
     return settings
+
+
+async def get_force_sub_channels(client, settings):
+    """Resolve the clone-specific force-sub list or the normal global/group list."""
+    if client and getattr(client, "is_clone", False):
+        clone_settings = getattr(client, "clone_settings", {}) or {}
+        if not clone_settings.get("fsub_enabled", True):
+            return []
+        overrides = (settings or {}).get("_clone_group_overrides", {})
+        channels = overrides.get("fsub", clone_settings.get("fsub", []))
+        return list(dict.fromkeys(int(channel) for channel in channels))
+    from info import AUTH_CHANNELS
+    configured = settings.get("fsub", []) if settings else []
+    if not isinstance(configured, list):
+        configured = [configured] if configured else []
+    return list(dict.fromkeys([int(channel) for channel in configured + AUTH_CHANNELS]))
+
+
+def get_bot_username(client):
+    me = getattr(client, "me", None)
+    return getattr(me, "username", None) or temp.U_NAME
+
+
+def get_bot_name(client):
+    me = getattr(client, "me", None)
+    return getattr(me, "first_name", None) or temp.B_NAME
+
+
+def get_bot_link(client):
+    username = get_bot_username(client)
+    return f"<a href='https://t.me/{username}'>{get_bot_name(client)}</a>" if username else temp.B_LINK
+
+
+def get_clone_star_plans(client, defaults):
+    settings = getattr(client, "clone_settings", {}) if getattr(client, "is_clone", False) else {}
+    plans = settings.get("premium_plans")
+    if plans is None:
+        return defaults
+    try:
+        return {int(amount): duration for amount, duration in plans.items()}
+    except (AttributeError, TypeError, ValueError):
+        return defaults
+
+
+async def has_bot_premium_access(client, user_id):
+    if client and getattr(client, "is_clone", False):
+        return await db.has_clone_premium_access(client.clone_bot_id, user_id)
+    return await db.has_premium_access(user_id)
     
-async def save_group_settings(group_id, key, value):
+async def save_group_settings(group_id, key, value, client=None):
     group_id = int(group_id)
+    if client and getattr(client, "is_clone", False):
+        return await db.set_clone_group_setting(client.clone_bot_id, group_id, key, value)
     current = await get_settings(group_id)
     current = current.copy()
     current.update({key: value})
     temp.SETTINGS[group_id] = current
     await db.update_settings(group_id, current)
 
-async def delete_group_setting(group_id, key):
+async def delete_group_setting(group_id, key, client=None):
     group_id = int(group_id)
+    if client and getattr(client, "is_clone", False):
+        return await db.delete_clone_group_setting(client.clone_bot_id, group_id, key)
     current = await get_settings(group_id)
     current = current.copy()
     if key in current:

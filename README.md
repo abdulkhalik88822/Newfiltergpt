@@ -78,6 +78,15 @@ docker run --env-file .env -p 8080:8080 auto-filter-bot
 1. Fork or push this repository to GitHub.
 2. Create a new **Web Service** on [Render](https://render.com).
 3. Set Runtime Environment to **Docker** (or Python 3).
+
+### 4. Create and manage bot clones
+The main bot includes a private **CREATE / MANAGE MY CLONES** menu and the `/clone`, `/clones`, and `/mybots` commands. Each owner can run up to three clones by default; the server-wide limit is ten. Set `MAX_CLONES_PER_USER` or `MAX_TOTAL_CLONES` in the host environment to change these limits.
+
+Before enabling clone creation, generate a Fernet key once with `python generate_clone_key.py` and save the printed value as the host environment variable `CLONE_ENCRYPTION_KEY`. Keep the same key across deployments and restarts. If the key is lost, saved clone tokens cannot be decrypted and the clones cannot be restored. Do not commit this key to Git or paste it into chat.
+
+To add a clone, create a bot with [@BotFather](https://t.me/BotFather), open the main bot in a private chat, choose **CREATE / MANAGE MY CLONES**, and paste the new token when prompted. The manager validates the token, encrypts it before storing it in MongoDB, and attempts to delete the submitted token message. Owners can pause, reactivate, customize the `/start` welcome text, or remove their own clones. In a clone's **Settings** menu, owners can configure Star prices/durations and plan text; add, remove, and list that clone's premium users; manage up to three shorteners and verification stages; set or reset file captions; manage force-subscribe channels; add single or double custom result buttons; and control auto-delete and content protection. Shortener API keys and bot tokens are encrypted at rest with the clone key. Clone premium users and premium access are isolated per clone. Removing a clone erases its stored token and clone premium list but does not revoke the token; use BotFather's `/revoke` if the token should stop working.
+
+Clones run the same file-search plugins and share the main bot's movie/file catalog. Clone-specific runtime settings, ownership, enabled status, welcome text, encrypted tokens, and premium access records are stored separately. Free hosting providers can still suspend services under their own limits, so continuous uptime depends on the hosting plan and service availability.
 4. Add your environment variables and click **Deploy**.
 
 ---

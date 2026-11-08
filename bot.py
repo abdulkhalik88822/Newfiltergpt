@@ -18,6 +18,7 @@ from plugins import web_server, check_expired_premium, keep_alive
 from dreamxbotz.Bot import dreamxbotz
 from dreamxbotz.util.keepalive import ping_server
 from dreamxbotz.Bot.clients import initialize_clients
+from plugins.clones import clone_manager
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = 500_000_000
@@ -84,6 +85,7 @@ async def dreamxbotz_start():
     temp.B_LINK = me.mention
     dreamxbotz.username = '@' + me.username
     asyncio.create_task(check_expired_premium(dreamxbotz))
+    await clone_manager.restore()
     
     logger.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
     logger.info(LOG_STR)
@@ -101,6 +103,7 @@ async def dreamxbotz_start():
     try:
         await idle()
     finally:
+        await clone_manager.stop_all()
         await app.cleanup()
         await dreamxbotz.stop()
 
