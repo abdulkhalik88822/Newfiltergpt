@@ -718,7 +718,7 @@ async def seasons_cb_handler(client: Client, query: CallbackQuery):
 
     btn.insert(
         0,
-        [InlineKeyboardButton("⇊ ꜱᴇʟᴇᴄᴛ ꜱᴇᴀꜱᴏɴ ⇊", callback_data="ident")],
+        [InlineKeyboardButton("⇊ ꜱᴇʟᴇᴄᴛ ꜱᴇᴀꜱᴏɴ ⇊", callback_data="ident")],
     )
     btn.append([InlineKeyboardButton(text="↭ ʙᴀᴄᴋ ᴛᴏ ꜰɪʟᴇs ​↭",
                callback_data=f"next_{req}_{key}_{offset}")])
@@ -1518,7 +1518,7 @@ async def auto_filter(client, msg, spoll=False):
             message = msg.message.reply_to_message
             search, files, offset, total_results = spoll
             m = await message.reply_text(script.SEARCHING_TXT.format(search))
-                settings = await get_settings(message.chat.id, client=client)
+            settings = await get_settings(message.chat.id, client=client)
             await msg.message.delete()
         bot_scope = getattr(getattr(client, "me", None), "id", temp.ME)
         key = f"{bot_scope}-{message.chat.id}-{message.id}"
