@@ -16,7 +16,7 @@ _CONFIG_DEFAULTS = {
     "SESSION": "Media_search",
     "API_ID": "21723146",
     "API_HASH": "07cd9c82699c28111cb33693ecbd9116",
-    "BOT_TOKEN": "6088261601:AAGrkc4I_iDziol3UOZDHxylwLvnNu2FjPY",
+    "BOT_TOKEN": "6088261601:AAF1GV_iAoYyRBT8apLntJv26ev4r4w3OfE",
     "CACHE_TIME": "99999",
     "USE_CAPTION_FILTER": "True",
     "NOR_IMG": "https://graph.org/file/41a08d01363c18ca909f1.jpg",
@@ -82,7 +82,7 @@ API_ID = int(_get_env('API_ID', ''))
 API_HASH = _get_env('API_HASH', '')
 
 # Bot token obtained from @BotFather
-BOT_TOKEN = _get_env('BOT_TOKEN', '')
+BOT_TOKEN = _get_env('BOT_TOKEN', '6088261601:AAF1GV_iAoYyRBT8apLntJv26ev4r4w3OfE')
 
 # Pyrogram session name
 SESSION = _get_env('SESSION', 'dreamxbotz_search')
@@ -135,13 +135,13 @@ UPDATE_CHNL_LNK = _get_env('UPDATE_CHNL_LNK', _get_env('CHNL_LNK', 'https://t.me
 # 3. DATABASE CONFIGURATION (MongoDB)
 # ==============================================================================
 # Primary MongoDB Connection URI & Database details
-DATABASE_URI = _get_env('DATABASE_URI', '')
+DATABASE_URI = _get_env('DATABASE_URI', 'mongodb+srv://akp88:akp88@cluster0.zuhgdny.mongodb.net/')
 DATABASE_NAME = _get_env('DATABASE_NAME', 'Cluster0')
 COLLECTION_NAME = _get_env('COLLECTION_NAME', 'dreamcinezone_files')
 
 # Secondary MongoDB for multiple DB load balancing
 MULTIPLE_DB = is_enabled(os.environ.get('MULTIPLE_DB', "False"), False)
-DATABASE_URI2 = _get_env('DATABASE_URI2', '')
+DATABASE_URI2 = _get_env('DATABASE_URI2', 'mongodb+srv://akp88:akp88@cluster0.zuhgdny.mongodb.net/')
 
 # User-managed bot clones. Keep the Fernet key stable across restarts and
 # deployments; clone tokens stored in MongoDB are encrypted with this key.
