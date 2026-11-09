@@ -31,8 +31,17 @@ lock = asyncio.Lock()
 
 logger = logging.getLogger(__name__)
 
-BUTTONS = LimitedDict(maxsize=200)
-FRESH = LimitedDict(maxsize=200)
+
+async def _delete_after_delay(delay, *messages):
+    await asyncio.sleep(max(0, float(delay)))
+    for message in messages:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+BUTTONS = LimitedDict(maxsize=1000)
+FRESH = LimitedDict(maxsize=1000)
 
 REMOVES_WORDS = {"in", "upload", "series", "full", "horror", "thriller", "mystery", "print", "file"}
 SEARCH_CLEAN_REGEX = re.compile(
@@ -392,8 +401,7 @@ async def advantage_spoll_choker(client, query):
         btn = InlineKeyboardMarkup(
             [[InlineKeyboardButton("🔰Cʟɪᴄᴋ ʜᴇʀᴇ & ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴀᴅᴍɪɴ🔰", url=OWNER_LNK)]])
         k = await query.message.edit(script.MVE_NT_FND, reply_markup=btn)
-        await asyncio.sleep(10)
-        await k.delete()
+        asyncio.create_task(_delete_after_delay(10, k))
 
 # Qualities
 @Client.on_callback_query(filters.regex(r"^qualities#"))
@@ -848,10 +856,6 @@ async def filter_seasons_cb_handler(client: Client, query: CallbackQuery):
 @Client.on_callback_query(group=10)
 async def cb_handler(client: Client, query: CallbackQuery):
     DreamxData = query.data
-    try:
-        await client.create_chat_invite_link(int(REQST_CHANNEL))
-    except Exception:
-        pass
     if query.data == "close_data":
         try:
             user = query.message.reply_to_message.from_user.id
@@ -896,6 +900,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
 
     elif query.data.startswith("autofilter_delete"):
+        if not query.from_user or str(query.from_user.id) not in {str(user_id) for user_id in ADMINS}:
+            return await query.answer("Only a configured bot admin can delete the indexed catalog.", show_alert=True)
         await Media.collection.drop()
         if MULTIPLE_DB:    
             await Media2.collection.drop()
@@ -943,11 +949,16 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
 
     elif query.data.startswith("killfilesdq"):
+        original = query.message.reply_to_message if query.message else None
+        requester = getattr(original, "from_user", None)
+        is_admin = query.from_user and str(query.from_user.id) in {str(user_id) for user_id in ADMINS}
+        is_requester = requester and query.from_user and requester.id == query.from_user.id
+        if not (is_admin or is_requester):
+            return await query.answer("Only the person who requested this deletion can confirm it.", show_alert=True)
         ident, keyword = query.data.split("#", 1)
         await query.message.edit_text(f"<b>Fetching Files for your query {keyword} on DB... Please wait...</b>")
         files, total = await get_bad_files(keyword)
-        await query.message.edit_text("<b>ꜰɪʟᴇ ᴅᴇʟᴇᴛɪᴏɴ ᴘʀᴏᴄᴇꜱꜱ ᴡɪʟʟ ꜱᴛᴀʀᴛ ɪɴ 5 ꜱᴇᴄᴏɴᴅꜱ !</b>")
-        await asyncio.sleep(5)
+        await query.message.edit_text("<b>ꜰɪʟᴇ ᴅᴇʟᴇᴛɪᴏɴ ᴘʀᴏᴄᴇꜱꜱ ɪs sᴛᴀʀᴛɪɴɢ ɴᴏᴡ...</b>")
         deleted = 0
         async with lock:
             try:
@@ -1142,13 +1153,12 @@ async def cb_handler(client: Client, query: CallbackQuery):
         try:
             user_id = query.from_user.id
             username = query.from_user.mention
+            await query.answer(MSG_ALRT)
             log_msg = await client.send_cached_media(chat_id=get_database_channel(client), file_id=file_id,)
             fileName = quote_plus(get_name(log_msg))
             channel_id = int(get_database_channel(client))
             dreamx_stream = f"{URL}watch/{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?channel={channel_id}&hash={get_hash(log_msg)}"
             dreamx_download = f"{URL}{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?channel={channel_id}&hash={get_hash(log_msg)}"
-            await query.answer(MSG_ALRT)
-            await asyncio.sleep(1)
             await log_msg.reply_text(
                 text=f"•• ʟɪɴᴋ ɢᴇɴᴇʀᴀᴛᴇᴅ ꜰᴏʀ ɪᴅ #{user_id} \n•• ᴜꜱᴇʀɴᴀᴍᴇ : {username} \n\n•• ᖴᎥᒪᗴ Nᗩᗰᗴ : {fileName}",
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -1166,12 +1176,14 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     ]
                 ])
             )
-            await asyncio.sleep(DELETE_TIME)
-            await dreamcinezone.delete()
+            asyncio.create_task(_delete_after_delay(DELETE_TIME, dreamcinezone))
             return
         except Exception as e:
             logger.error("Callback error: %s", e)
-            await query.answer(f"⚠️ SOMETHING WENT WRONG STREAM LINK  \n\n{e}", show_alert=True)
+            try:
+                await query.answer(f"⚠️ SOMETHING WENT WRONG STREAM LINK  \n\n{e}", show_alert=True)
+            except Exception:
+                pass
             return
 
 
@@ -1185,8 +1197,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton("🚀 Buy Premium 🚀", callback_data="premium_info")]
             ])
         )
-        await asyncio.sleep(DELETE_TIME)
-        await dreamcinezone.delete()
+        asyncio.create_task(_delete_after_delay(DELETE_TIME, dreamcinezone))
 
     elif query.data == "start":
         buttons = [[
@@ -1308,8 +1319,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
                         InlineKeyboardButton("🚀 Buy Premium 🚀", callback_data="premium_info")
                     ]])
                 )
-                await asyncio.sleep(DELETE_TIME)
-                return await msg.delete()
+                asyncio.create_task(_delete_after_delay(DELETE_TIME, msg))
+                return
         except Exception:
             logger.exception("Error in give_trial callback")
 
@@ -1317,7 +1328,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif query.data == "source":
         buttons = [[
-            InlineKeyboardButton('ᴅʀᴇᴀᴍxʙᴏᴛᴢ 📜', url='https://github.com/DreamXBotz/Auto_Filter_Bot.git'),
+            InlineKeyboardButton('@Attitude2688 📜', url='https://t.me/Attitude2688'),
             InlineKeyboardButton('⇋ ʙᴀᴄᴋ ⇋', callback_data='about')
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
@@ -1774,15 +1785,7 @@ async def advantage_spell_chok(client, message):
         logger.exception("get_poster failed for query=%s: %s", query, e)
         try:
             k = await message.reply(script.I_CUDNT.format(message.from_user.mention))
-            await asyncio.sleep(60)
-            try:
-                await k.delete()
-            except Exception:
-                pass
-        except Exception:
-            pass
-        try:
-            await message.delete()
+            asyncio.create_task(_delete_after_delay(60, k, message))
         except Exception:
             pass
         return
@@ -1791,15 +1794,7 @@ async def advantage_spell_chok(client, message):
         button = [[InlineKeyboardButton(
             "🔍 ᴄʜᴇᴄᴋ sᴘᴇʟʟɪɴɢ ᴏɴ ɢᴏᴏɢʟᴇ 🔍", url=f"https://www.google.com/search?q={google}")]]
         k = await message.reply_text(text=script.I_CUDNT.format(search), reply_markup=InlineKeyboardMarkup(button))
-        await asyncio.sleep(60)
-        try:
-            await k.delete()
-        except Exception:
-            pass
-        try:
-            await message.delete()
-        except Exception:
-            pass
+        asyncio.create_task(_delete_after_delay(60, k, message))
         return
     user = message.from_user.id if message.from_user else 0
     buttons = [
@@ -1809,14 +1804,5 @@ async def advantage_spell_chok(client, message):
     buttons.append([InlineKeyboardButton(
         text="🚫 ᴄʟᴏsᴇ 🚫", callback_data='close_data', style=enums.ButtonStyle.DANGER)])
     d = await message.reply_text(text=script.CUDNT_FND.format(message.from_user.mention), reply_markup=InlineKeyboardMarkup(buttons))
-    await asyncio.sleep(60)
-    try:
-        await d.delete()
-    except Exception:
-        pass
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    asyncio.create_task(_delete_after_delay(60, d, message))
     
-

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet, InvalidToken
 from pyrogram import Client, filters, StopPropagation
 from pyrogram.enums import ParseMode
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 
 from database.users_chats_db import db
 from utils import is_clone_access_allowed
@@ -45,6 +45,15 @@ logger = logging.getLogger(__name__)
 
 TOKEN_PATTERN = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{20,}$")
 MAX_WELCOME_LENGTH = 500
+CLONE_COMMANDS = (
+    BotCommand("start", "Start the bot"),
+    BotCommand("alive", "Check bot status"),
+    BotCommand("customize", "Manage this clone bot"),
+    BotCommand("settings", "Configure group settings"),
+    BotCommand("id", "Show Telegram IDs"),
+    BotCommand("info", "Show user information"),
+    BotCommand("myplan", "Check your premium plan"),
+)
 CLONE_FLOWS = {}
 CLONE_SETTINGS_FIELDS = {
     "is_verify", "shortner", "api", "api_two", "api_three", "api_encrypted", "api_two_encrypted", "api_three_encrypted",
@@ -148,8 +157,9 @@ class CloneManager:
             api_id=API_ID,
             api_hash=API_HASH,
             bot_token=token,
-            workers=2,
-            sleep_threshold=60,
+            # Match the main bot's update concurrency for clone responsiveness.
+            workers=60,
+            sleep_threshold=5,
             in_memory=True,
             plugins={"root": "plugins"},
         )
@@ -178,6 +188,16 @@ class CloneManager:
             me = await client.get_me()
             if not me or not getattr(me, "is_bot", False):
                 raise CloneError("Telegram did not validate this as a bot token.")
+            # Each clone receives only its own user-facing command menu.
+            # Main-bot clone management and admin commands are not published.
+            try:
+                await client.set_bot_commands(list(CLONE_COMMANDS))
+            except Exception as exc:
+                logger.warning(
+                    "Could not publish command menu for clone %s (%s)",
+                    bot_id,
+                    type(exc).__name__,
+                )
             client.username = f"@{me.username}" if me.username else ""
             client.first_name = me.first_name or "Bot"
             client.clone_settings.update(record.get("settings", {}))

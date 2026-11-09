@@ -33,6 +33,29 @@ BATCH_FILES = {}
 REQUEST_INVITE_LINK_CACHE: dict[int, str] = {}
 
 
+async def _delete_after(delay, *messages):
+    await asyncio.sleep(max(0, float(delay)))
+    for message in messages:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+
+async def _cleanup_delivery_after(client, chat_id, messages, notice, delay, done_text):
+    await asyncio.sleep(max(0, float(delay)))
+    try:
+        message_ids = [message.id for message in messages if message]
+        if message_ids:
+            await client.delete_messages(chat_id=chat_id, message_ids=message_ids)
+    except Exception:
+        pass
+    try:
+        await notice.edit_text(done_text)
+    except Exception:
+        pass
+
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     try:
@@ -87,8 +110,7 @@ async def start(client, message):
                 parse_mode=enums.ParseMode.HTML
             )
 
-            await asyncio.sleep(300)
-            await dlt.delete()
+            asyncio.create_task(_delete_after(300, dlt))
             return         
         if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
             buttons = [[
@@ -99,7 +121,6 @@ async def start(client, message):
             reply_markup = InlineKeyboardMarkup(buttons)
             await message.reply(script.GSTART_TXT.format(message.from_user.mention if message.from_user else message.chat.title, get_bot_username(client), get_bot_name(client)), reply_markup=reply_markup, link_preview_options=LinkPreviewOptions(is_disabled=True))
 
-            await asyncio.sleep(2) 
             if not await db.get_chat(message.chat.id):
                 total=await client.get_chat_members_count(message.chat.id)
                 await client.send_message(get_log_channel(client), script.LOG_TEXT_G.format(message.chat.title, message.chat.id, total, "Unknown"))       
@@ -117,9 +138,11 @@ async def start(client, message):
                     ],[
                         InlineKeyboardButton('ᴛᴏᴘ sᴇᴀʀᴄʜɪɴɢ ⭐', callback_data="topsearch"),
                         InlineKeyboardButton('ᴜᴘɢʀᴀᴅᴇ 🎟', callback_data="premium_info"),
-                    ],[
-                        InlineKeyboardButton('🤖 CREATE / MANAGE MY CLONES', callback_data='clone_home')
                     ]]
+            if not getattr(client, "is_clone", False):
+                buttons.append([
+                    InlineKeyboardButton('🤖 CREATE / MANAGE MY CLONES', callback_data='clone_home')
+                ])
             reply_markup = InlineKeyboardMarkup(buttons)
             current_time = datetime.now(TZ)
             curr_time = current_time.hour        
@@ -280,8 +303,12 @@ async def start(client, message):
             except Exception:
                 pass
 
-        file_details_task = asyncio.create_task(get_file_details(decoded_file_id))
-        if not await has_bot_premium_access(client, message.from_user.id): 
+        file_details_task = (
+            None if data.startswith("allfiles")
+            else asyncio.create_task(get_file_details(decoded_file_id))
+        )
+        premium_access = await has_bot_premium_access(client, message.from_user.id)
+        if not premium_access:
             try:
                 btn = []
                 chat = grp_id
@@ -319,7 +346,7 @@ async def start(client, message):
                 logger.error(f"❗️ Force Sub Error:\n\n{repr(e)}")
 
         user_id = m.from_user.id
-        if not await has_bot_premium_access(client, user_id):
+        if not premium_access:
             try:
                 grp_id = int(grp_id)
                 settings = await get_settings(grp_id, client=client)
@@ -361,61 +388,82 @@ async def start(client, message):
                             reply_markup=reply_markup,
                             parse_mode=enums.ParseMode.HTML
                         )
-                        await asyncio.sleep(300) 
-                        await n.delete()
-                        await m.delete()
+                        asyncio.create_task(_delete_after(300, n, m))
                         return
             except Exception as e:
                 logger.error("Error In Verification: %s", e)
                 pass
 
-        files_ = await file_details_task
+        files_ = await file_details_task if file_details_task else None
         if data.startswith("allfiles"):
             try:
                 files = temp.GETALL.get(file_id)
                 if not files:
                     return await message.reply('<b><i>ɴᴏ ꜱᴜᴄʜ ꜰɪʟᴇ ᴇxɪꜱᴛꜱ !</b></i>')
-                send_allfiles = []
-                cover = None
-                for file in files:
-                    file_id = file.file_id
-                    files_ = await get_file_details(file_id)
-                    files1 = files_[0]
-                    title = clean_filename(files1.file_name)
-                    cover = files1.cover
-                    size = get_size(files1.file_size)
-                    f_caption = files1.caption
-                    settings = await get_settings(int(grp_id), client=client)
-                    DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
-                    if DREAMX_CAPTION:
+                settings = await get_settings(int(grp_id), client=client)
+                file_details = await asyncio.gather(*(get_file_details(item.file_id) for item in files))
+                premium_for_stream = None
+                if STREAM_MODE and PREMIUM_STREAM_MODE:
+                    premium_for_stream = await has_bot_premium_access(client, message.from_user.id)
+                send_limit = asyncio.Semaphore(3)
+
+                async def send_one_catalog_file(item, details):
+                    if not details:
+                        return None
+                    file_data = details[0]
+                    file_id = item.file_id
+                    title = clean_filename(file_data.file_name)
+                    size = get_size(file_data.file_size)
+                    caption = file_data.caption
+                    custom_caption = settings.get('caption', CUSTOM_FILE_CAPTION)
+                    if custom_caption:
                         try:
-                            f_caption=DREAMX_CAPTION.format(file_name= '' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
-                        except Exception as e:
-                            logger.warning("Failed to format caption: %s", e)
-                            f_caption = clean_filename(files1.file_name)
-                    if f_caption is None:
-                        f_caption = f"{clean_filename(files1.file_name)}"
-                    msg = await send_catalog_media(
-                        client,
-                        chat_id=message.from_user.id,
-                        file_id=file_id,
-                        file_type=files1.file_type,
-                        caption=f_caption,
-                        video_cover=cover,
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                    )
-                    sent_media = getattr(msg, msg.media.value, None) if msg.media else None
+                            caption = custom_caption.format(
+                                file_name=title or '', file_size=size or '',
+                                file_caption=caption or '',
+                            )
+                        except Exception:
+                            logger.warning("Failed to format batch caption for %s", title)
+                            caption = title
+                    if caption is None:
+                        caption = title
+                    async with send_limit:
+                        sent = await send_catalog_media(
+                            client,
+                            chat_id=message.from_user.id,
+                            file_id=file_id,
+                            file_type=file_data.file_type,
+                            caption=caption,
+                            video_cover=file_data.cover,
+                            protect_content=settings.get('file_secure', PROTECT_CONTENT),
+                        )
+                    sent_media = getattr(sent, sent.media.value, None) if sent.media else None
                     sent_file_id = getattr(sent_media, 'file_id', file_id)
-                    btn = await stream_buttons(client, message.from_user.id, sent_file_id)
-                    await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
-                    send_allfiles.append(msg)
+                    buttons = await stream_buttons(
+                        client, message.from_user.id, sent_file_id,
+                        premium_access=premium_for_stream,
+                    )
+                    await sent.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+                    return sent
+
+                batch_results = await asyncio.gather(
+                    *(send_one_catalog_file(item, details) for item, details in zip(files, file_details)),
+                    return_exceptions=True,
+                )
+                send_allfiles = [item for item in batch_results if isinstance(item, Message)]
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        logger.warning("A file in Send All failed (%s)", type(result).__name__)
+                if not send_allfiles:
+                    return await message.reply_text("⚠️ No files could be delivered. Check the database/cache channel permissions.")
                 k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
 
                 if settings.get('auto_delete'):
-                    await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
-                    if send_allfiles:
-                        await client.delete_messages(chat_id=message.from_user.id, message_ids=[x.id for x in send_allfiles])
-                    await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
+                    asyncio.create_task(_cleanup_delivery_after(
+                        client, message.from_user.id, send_allfiles, k,
+                        settings.get('delete_time', DELETE_TIME),
+                        "<b>Files were auto-deleted. Please search again.</b>",
+                    ))
                 else:
                     await k.delete()
                 return
@@ -425,7 +473,7 @@ async def start(client, message):
             except Exception as e:
                 logger.exception("Error in allfiles handler: %s", e)
                 if getattr(client, "is_clone", False):
-                    await message.reply_text("⚠️ This clone could not access the shared file. Add it as an admin in the database/cache channel and try again.")
+                    await message.reply_text(f"⚠️ Clone file delivery failed: {str(e)[:180]}")
                 return
 
         settings = await get_settings(int(grp_id), client=client)
@@ -453,7 +501,10 @@ async def start(client, message):
                 title = clean_filename(file.file_name)
                 size=get_size(file.file_size)
                 f_caption = f"<code>{title}</code>"
-                btn = await stream_buttons(client, message.from_user.id, file.file_id)
+                btn = await stream_buttons(
+                    client, message.from_user.id, file.file_id,
+                    premium_access=premium_access,
+                )
                 settings = await get_settings(int(grp_id), client=client)
                 DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
                 if DREAMX_CAPTION:
@@ -465,9 +516,11 @@ async def start(client, message):
                 await msg.edit_caption(f_caption, reply_markup=InlineKeyboardMarkup(btn))
                 k = await msg.reply(script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
                 if settings.get('auto_delete'):
-                    await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
-                    await msg.delete()
-                    await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+                    asyncio.create_task(_cleanup_delivery_after(
+                        client, message.from_user.id, [msg], k,
+                        settings.get('delete_time', DELETE_TIME),
+                        '<b>File was auto-deleted. Please search again.</b>',
+                    ))
                 else:
                     await k.delete()
                 return
@@ -506,14 +559,19 @@ async def start(client, message):
         )
         sent_media = getattr(msg, msg.media.value, None) if msg.media else None
         sent_file_id = getattr(sent_media, 'file_id', file_id)
-        btn = await stream_buttons(client, message.from_user.id, sent_file_id)
+        btn = await stream_buttons(
+            client, message.from_user.id, sent_file_id,
+            premium_access=premium_access,
+        )
         await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
         
         k = await msg.reply(script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
         if settings.get('auto_delete'):
-            await asyncio.sleep(settings.get('delete_time', DELETE_TIME))
-            await msg.delete()
-            await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+            asyncio.create_task(_cleanup_delivery_after(
+                client, message.from_user.id, [msg], k,
+                settings.get('delete_time', DELETE_TIME),
+                '<b>File was auto-deleted. Please search again.</b>',
+            ))
         else:
             await k.delete()
         return
@@ -527,7 +585,7 @@ async def start(client, message):
             return await message.reply_text(f"⚠️ Clone file delivery failed: {str(e)[:180]}")
         pass
 
-async def stream_buttons(client, user_id: int, file_id: str):
+async def stream_buttons(client, user_id: int, file_id: str, premium_access=None):
     if STREAM_MODE and not PREMIUM_STREAM_MODE:
         return [
             [InlineKeyboardButton('🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data=f'generate_stream_link:{file_id}')],
@@ -535,7 +593,9 @@ async def stream_buttons(client, user_id: int, file_id: str):
             [InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=UPDATE_CHNL_LNK)]
         ]
     elif STREAM_MODE and PREMIUM_STREAM_MODE:
-        if not await has_bot_premium_access(client, user_id):
+        if premium_access is None:
+            premium_access = await has_bot_premium_access(client, user_id)
+        if not premium_access:
             return [
                 [InlineKeyboardButton('🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data='prestream')],
                 [InlineKeyboardButton('ℹ️ ᴠɪᴇᴡ ᴀᴜᴅɪᴏ & ꜱᴜʙꜱ ɪɴꜰᴏ ℹ️', callback_data='prestream')],
@@ -878,8 +938,7 @@ async def deletemultiplefiles(client, message):
     total = len(files)
     if total == 0:
         await k.edit_text(f"<b>No files found for your query {keyword} !</b>")
-        await asyncio.sleep(DELETE_TIME)
-        await k.delete()
+        asyncio.create_task(_delete_after(DELETE_TIME, k))
         return
     await k.delete()
     btn = [[
@@ -1056,11 +1115,7 @@ async def del_msg(client, message):
         "⚠️ Aʀᴇ ʏᴏᴜ sᴜʀᴇ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴄʟᴇᴀʀ ᴛʜᴇ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ ʟɪsᴛ ?\n\n ᴅᴏ ʏᴏᴜ ꜱᴛɪʟʟ ᴡᴀɴᴛ ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ ?",
         reply_markup=confirm_markup
     )
-    await asyncio.sleep(60)
-    try:
-        await sent_message.delete()
-    except Exception as e:
-        logger.error("Error deleting the message: %s", e)
+    asyncio.create_task(_delete_after(60, sent_message))
 
 @Client.on_callback_query(filters.regex('^confirm_del_'))
 async def confirmation_handler(client, callback_query):
@@ -1111,7 +1166,7 @@ async def set_tutorial(client, message: Message):
     except IndexError:
         return await message.reply_text(
             f"<b>ᴄᴏᴍᴍᴀɴᴅ ɪɴᴄᴏᴍᴘʟᴇᴛᴇ !!\n\nᴜꜱᴇ ʟɪᴋᴇ ᴛʜɪꜱ -</b>\n\n"
-            f"<code>/{message.command[0]} https://t.me/dreamxbotz</code>"
+            f"<code>/{message.command[0]} https://t.me/bots_up</code>"
         )
     if message.command[0] == "set_tutorial":
         tutorial_key = "tutorial"
@@ -1143,8 +1198,7 @@ async def handle_shortner_command(c, m, shortner_key, api_key, log_prefix, fallb
             f"<b>ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ -\n\n`/{m.command[0]} your-shortener-domain.com your_api_key_here`</b>"
         )
     sts = await m.reply("<b>♻️ ᴄʜᴇᴄᴋɪɴɢ...</b>")
-    await asyncio.sleep(1.2)
-    await sts.delete()
+    asyncio.create_task(_delete_after(1.2, sts))
     if m.chat.type not in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
         return await m.reply_text("<b>ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪɴ ɢʀᴏᴜᴘ...</b>")
     custom_flag = 'custom_shortner' if shortner_key == 'shortner' else f'custom_{shortner_key}'
@@ -1199,8 +1253,7 @@ async def set_log(client, message):
         await message.reply("<b>ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ ᴛʜɪꜱ - \n\n`/set_log_channel -100******`</b>")
         return
     sts = await message.reply("<b>♻️ ᴄʜᴇᴄᴋɪɴɢ...</b>")
-    await asyncio.sleep(1.2)
-    await sts.delete()
+    asyncio.create_task(_delete_after(1.2, sts))
     chat_type = message.chat.type
     if chat_type not in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
         return await message.reply_text("<b>ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ɪɴ ɢʀᴏᴜᴘ...</b>")
@@ -1212,8 +1265,7 @@ async def set_log(client, message):
         return await message.reply_text('<b>ᴍᴀᴋᴇ sᴜʀᴇ ɪᴅ ɪs ɪɴᴛᴇɢᴇʀ...</b>')
     try:
         t = await client.send_message(chat_id=log, text="<b>ʜᴇʏ ᴡʜᴀᴛ's ᴜᴘ!!</b>")
-        await asyncio.sleep(3)
-        await t.delete()
+        asyncio.create_task(_delete_after(3, t))
     except Exception as e:
         return await message.reply_text(f'<b><u>😐 ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜɪs ʙᴏᴛ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ᴄʜᴀɴɴᴇʟ...</u>\n\n💔 ᴇʀʀᴏʀ - <code>{e}</code></b>')
     await save_group_settings(grp_id, 'log', log, client=client)
@@ -1280,8 +1332,7 @@ async def all_settings(client, message):
         [InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ", callback_data="close_data", style=enums.ButtonStyle.DANGER)]
     ]
     dlt = await message.reply_text(text, reply_markup=InlineKeyboardMarkup(btn), link_preview_options=LinkPreviewOptions(is_disabled=True))
-    await asyncio.sleep(300)
-    await dlt.delete()
+    asyncio.create_task(_delete_after(300, dlt))
 
 @Client.on_callback_query(filters.regex(r"^reset_group_(\-\d+)$"))
 async def reset_group_callback(client, callback_query):

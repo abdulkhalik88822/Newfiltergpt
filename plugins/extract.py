@@ -24,7 +24,7 @@ if TELEGRAPH_ACCESS_TOKEN:
 else:
     telegraph = Telegraph()
     try:
-        telegraph.create_account(short_name="DreamxBotz")
+        telegraph.create_account(short_name="bots_up")
     except Exception:
         logger.exception("Failed to create Telegraph account")
 
@@ -192,7 +192,7 @@ async def extract_data_handler(client: Client, query: CallbackQuery):
             page_parts.append("<b>Subtitle Tracks:</b> None<br>")
 
         page_parts.append(
-            '<i><code>Join <a href="https://t.me/DreamxBotz">DreamxBotz</a></code></i>'
+            '<i><code>Join <a href="https://t.me/bots_up">@bots_up</a></code></i>'
         )
 
         page_content = "".join(page_parts)
@@ -202,7 +202,7 @@ async def extract_data_handler(client: Client, query: CallbackQuery):
                 telegraph.create_page,
                 title=safe_title[:200],
                 html_content=page_content,
-                author_name="DreamxBotz"
+                author_name="@bots_up"
             )
         except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout):
             await query.message.reply_text("⚠️ Telegraph is busy. Try again later.")
