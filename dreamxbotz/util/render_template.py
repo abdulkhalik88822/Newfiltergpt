@@ -12,9 +12,10 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-async def render_page(id, secure_hash, src=None):
-    await dreamxbotz.get_messages(int(BIN_CHANNEL), int(id))
-    file_data = await get_file_ids(dreamxbotz, int(BIN_CHANNEL), int(id))
+async def render_page(id, secure_hash, src=None, channel_id=None):
+    channel_id = int(channel_id or BIN_CHANNEL)
+    await dreamxbotz.get_messages(channel_id, int(id))
+    file_data = await get_file_ids(dreamxbotz, channel_id, int(id))
     if file_data.unique_id[:6] != secure_hash:
         logger.debug(f"link hash: {secure_hash} - {file_data.unique_id[:6]}")
         logger.debug(f"Invalid hash for message with - ID {id}")
@@ -22,7 +23,7 @@ async def render_page(id, secure_hash, src=None):
 
     src = urllib.parse.urljoin(
         URL,
-        f"{id}/{urllib.parse.quote_plus(file_data.file_name)}?hash={secure_hash}",
+        f"{id}/{urllib.parse.quote_plus(file_data.file_name)}?channel={channel_id}&hash={secure_hash}",
     )
 
     tag = file_data.mime_type.split("/")[0].strip()

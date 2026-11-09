@@ -1,7 +1,7 @@
 #Thanks @dreamxbotz for helping in this journey 
 import asyncio
 import logging
-from info import BIN_CHANNEL
+from utils import get_database_channel
 from typing import Dict, Union
 from dreamxbotz.Bot import work_loads
 from pyrogram import Client, utils, raw
@@ -14,7 +14,7 @@ from pyrogram.file_id import FileId, FileType, ThumbnailSource
 logger = logging.getLogger(__name__)
 
 class ByteStreamer:
-    def __init__(self, client: Client):
+    def __init__(self, client: Client, channel_id=None):
         """A custom class that holds the cache of a specific client and class functions.
         attributes:
             client: the client that the cache is for.
@@ -29,6 +29,7 @@ class ByteStreamer:
         """
         self.clean_timer = 30 * 60
         self.client: Client = client
+        self.channel_id = int(channel_id) if channel_id is not None else int(get_database_channel(client))
         self.cached_file_ids: Dict[int, FileId] = {}
         asyncio.create_task(self.clean_cache())
 
@@ -48,7 +49,7 @@ class ByteStreamer:
         Generates the properties of a media file on a specific message.
         returns ths properties in a FIleId class.
         """
-        file_id = await get_file_ids(self.client, BIN_CHANNEL, id)
+        file_id = await get_file_ids(self.client, self.channel_id, id)
         logger.debug(f"Generated file ID and Unique ID for message with ID {id}")
         if not file_id:
             logger.debug(f"Message with ID {id} not found")
