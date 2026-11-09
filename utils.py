@@ -19,6 +19,9 @@ from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx
 
 logger = logging.getLogger(__name__)
 
+_CLONE_GROUP_SETTINGS_TTL = 30
+_CLONE_GROUP_SETTINGS_CACHE = {}
+
 def get_random_mix_id():
     chars = string.ascii_letters + string.digits
     return ''.join(random.choices(chars, k=6))
@@ -43,7 +46,7 @@ class LimitedDict(dict):
         self.maxsize = maxsize
 
     def __setitem__(self, key, value):
-        if len(self) >= self.maxsize:
+        if key not in self and len(self) >= self.maxsize:
             self.pop(next(iter(self)), None)
         super().__setitem__(key, value)
 
@@ -60,8 +63,8 @@ class temp(object):
     U_NAME = None
     B_NAME = None
     B_LINK = None
-    SETTINGS = LimitedDict(maxsize=300)
-    GETALL = LimitedDict(maxsize=200)
+    SETTINGS = LimitedDict(maxsize=500)
+    GETALL = LimitedDict(maxsize=1000)
     IMDB_CAP = LimitedDict(maxsize=100)
     VERIFICATIONS = LimitedDict(maxsize=300)
     TEMP_INVITE_LINKS = LimitedDict(maxsize=200)
@@ -453,7 +456,19 @@ async def get_settings(group_id, client=None):
     if client and getattr(client, "is_clone", False):
         settings = settings.copy()
         settings.update(getattr(client, "clone_settings", {}) or {})
-        group_overrides = await db.get_clone_group_settings(client.clone_bot_id, group_id)
+        cache_key = (int(client.clone_bot_id), group_id)
+        cached = _CLONE_GROUP_SETTINGS_CACHE.get(cache_key)
+        now = time.monotonic()
+        if cached and cached[0] > now:
+            group_overrides = cached[1].copy()
+        else:
+            group_overrides = await db.get_clone_group_settings(client.clone_bot_id, group_id)
+            if len(_CLONE_GROUP_SETTINGS_CACHE) >= 5000:
+                _CLONE_GROUP_SETTINGS_CACHE.pop(next(iter(_CLONE_GROUP_SETTINGS_CACHE)), None)
+            _CLONE_GROUP_SETTINGS_CACHE[cache_key] = (
+                now + _CLONE_GROUP_SETTINGS_TTL,
+                group_overrides.copy(),
+            )
         settings.update(group_overrides)
         settings["_clone_group_overrides"] = group_overrides
     return settings
@@ -553,7 +568,9 @@ def get_database_channel(client):
 async def save_group_settings(group_id, key, value, client=None):
     group_id = int(group_id)
     if client and getattr(client, "is_clone", False):
-        return await db.set_clone_group_setting(client.clone_bot_id, group_id, key, value)
+        result = await db.set_clone_group_setting(client.clone_bot_id, group_id, key, value)
+        _CLONE_GROUP_SETTINGS_CACHE.pop((int(client.clone_bot_id), group_id), None)
+        return result
     current = await get_settings(group_id)
     current = current.copy()
     current.update({key: value})
@@ -563,7 +580,9 @@ async def save_group_settings(group_id, key, value, client=None):
 async def delete_group_setting(group_id, key, client=None):
     group_id = int(group_id)
     if client and getattr(client, "is_clone", False):
-        return await db.delete_clone_group_setting(client.clone_bot_id, group_id, key)
+        result = await db.delete_clone_group_setting(client.clone_bot_id, group_id, key)
+        _CLONE_GROUP_SETTINGS_CACHE.pop((int(client.clone_bot_id), group_id), None)
+        return result
     current = await get_settings(group_id)
     current = current.copy()
     if key in current:

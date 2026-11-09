@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=1,12,24&height=180&section=header&text=DreamXBotz%20Auto%20Filter&fontSize=40&fontAlignY=36&desc=High-Performance%20Telegram%20Media%20Indexing%20Bot&descAlignY=58&descAlign=50" width="100%" alt="Header Banner"/>
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=1,12,24&height=180&section=header&text=Bots%20Up%20Auto%20Filter&fontSize=40&fontAlignY=36&desc=High-Performance%20Telegram%20Media%20Indexing%20Bot&descAlignY=58&descAlign=50" width="100%" alt="Header Banner"/>
 </p>
 
 <p align="center">
@@ -17,15 +17,15 @@
 </p>
 
 <p align="center">
-  <a href="https://t.me/Princess_V4_bot">
+  <a href="https://t.me/bots_up">
     <img src="https://img.shields.io/badge/🤖%20Demo%20Bot-Telegram-0088cc?style=for-the-badge&logo=telegram&logoColor=white" alt="Demo Bot">
   </a>
   &nbsp;
-  <a href="https://t.me/Deendayal_Support_Group">
+  <a href="https://t.me/Attitude2688">
     <img src="https://img.shields.io/badge/💬%20Support%20Group-Join-24A1DE?style=for-the-badge&logo=telegram&logoColor=white" alt="Support Group">
   </a>
   &nbsp;
-  <a href="https://t.me/dreamxbotz">
+  <a href="https://t.me/bots_up">
     <img src="https://img.shields.io/badge/📢%20Updates-Channel-FF8800?style=for-the-badge&logo=telegram&logoColor=white" alt="Updates">
   </a>
 </p>
@@ -86,6 +86,8 @@ Before enabling clone creation, generate a Fernet key once with `python generate
 
 To add a clone, create a bot with [@BotFather](https://t.me/BotFather), open the main bot in a private chat, choose **CREATE / MANAGE MY CLONES**, and paste the new token when prompted. The manager validates the token, encrypts it before storing it in MongoDB, and attempts to delete the submitted token message. Owners can pause, reactivate, customize the `/start` welcome text, or remove their own clones. In each clone's private chat, `/customize` opens its owner panel for monetization, start text, log and database channels, admins, status, public/private mode, restart, and delete. **MORE FEATURES** contains that clone's verification, force-subscribe, shortener, caption, custom-button, auto-delete, and content-protection controls. If a clone cannot reuse a main-bot file ID, the main bot stages the file once in the selected database/cache channel and the clone copies it to the user; both bots must be channel admins. Star plans, premium users, log/database channels, admins, and runtime settings remain scoped to the clone. Shortener API keys and bot tokens are encrypted at rest with the clone key. Removing a clone erases its stored token, premium list, and clone-specific group settings but does not revoke the token; use BotFather's `/revoke` if the token should stop working.
 
+Clone media delivery reuses cached channel message IDs and admin checks after the first send. **Send All** sends up to three files concurrently, and auto-delete timers run in background tasks so they do not hold up new bot updates. Search callback state is namespaced by bot ID to keep main-bot and clone buttons separate.
+
 Clones run the same file-search plugins and share the main bot's movie/file catalog. Clone-specific runtime settings, ownership, enabled status, welcome text, encrypted tokens, and premium access records are stored separately. Free hosting providers can still suspend services under their own limits, so continuous uptime depends on the hosting plan and service availability.
 4. Add your environment variables and click **Deploy**.
 
@@ -136,8 +138,8 @@ Clones run the same file-search plugins and share the main bot's movie/file cata
 - [⌯ Ꭺɴᴏɴʏᴍᴏᴜs | ×͜× |](https://t.me/BeingXAnonymous)
 - [⌯ ᴢɪsʜᴀɴ | ×͜× |](https://t.me/IM_JISSHU)
 - [⌯ ʙʜᴀʀᴀᴛʜ | ×͜× |](https://t.me/Bharath_boy)
-- [Support Group](https://t.me/Deendayal_Support_Group)
-- Thanks to the **DreamXBotz** community and all contributors who worked on the original project.
+- [Support Contact](https://t.me/Attitude2688)
+- Thanks to the original project contributors and maintainers.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=1,12,24&height=100&section=footer" width="100%" alt="Footer Banner"/>

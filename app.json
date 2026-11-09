@@ -1,5 +1,5 @@
 {
-  "name": "DreamxBotz Auto Filter Bot",
+  "name": "Bots Up Auto Filter Bot",
   "description": "Telegram auto-filter bot for indexing channel files and searching them quickly.",
   "stack": "container",
   "keywords": [

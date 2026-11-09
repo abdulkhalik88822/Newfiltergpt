@@ -35,12 +35,13 @@ _CONFIG_DEFAULTS = {
     "MAX_B_TN": "10",
     "MAX_BTN": "True",
     "PORT": "8080",
-    "GRP_LNK": "https://t.me/TG_SUPPORT_GROUP",
-    "UPDATE_CHNL_LNK": "https://t.me/TG_LINKS_CHANNEL",
+    "GRP_LNK": "https://t.me/bots_up",
+    "UPDATE_CHNL_LNK": "https://t.me/bots_up",
+    "OWNER_LNK": "https://t.me/Attitude2688",
     "TUTORIAL": "https://t.me/TG_UPDATES1/371",
     "MSG_ALRT": "➕ just add me your group see my power🤘",
     "LOG_CHANNEL": "-1001626107740",
-    "SUPPORT_CHAT": "TG_SUPPORT_GROUP",
+    "SUPPORT_CHAT": "https://t.me/Attitude2688",
     "P_TTI_SHOW_OFF": "False",
     "IMDB": "True",
     "AUTO_FFILTER": "True",
@@ -107,7 +108,7 @@ DELETE_CHANNELS = [int(dch) if id_pattern.search(dch) else dch for dch in _get_e
 # Support Group & Request Channel
 support_chat_id = _get_env('SUPPORT_CHAT_ID', '-100')
 SUPPORT_CHAT_ID = int(support_chat_id) if support_chat_id and id_pattern.search(support_chat_id) else None
-SUPPORT_CHAT = _get_env('SUPPORT_CHAT', 'https://t.me/')
+SUPPORT_CHAT = _get_env('SUPPORT_CHAT', 'https://t.me/Attitude2688')
 
 reqst_channel = _get_env('REQST_CHANNEL_ID', _get_env('REQST_CHANNEL', '-100'))
 REQST_CHANNEL = int(reqst_channel) if reqst_channel and id_pattern.search(reqst_channel) else None
@@ -125,9 +126,9 @@ AUTH_USERS = (auth_users + ADMINS) if auth_users else []
 PREMIUM_USER = [int(user) if id_pattern.search(user) else user for user in _get_env('PREMIUM_USER', '').split()]
 
 # Social & Community Links
-GRP_LNK = _get_env('GRP_LNK', 'https://t.me/dreamxbotz')
-OWNER_LNK = _get_env('OWNER_LNK', 'https://t.me/dreamxbotz')
-UPDATE_CHNL_LNK = _get_env('UPDATE_CHNL_LNK', _get_env('CHNL_LNK', 'https://t.me/dreamxbotz'))
+GRP_LNK = _get_env('GRP_LNK', 'https://t.me/bots_up')
+OWNER_LNK = _get_env('OWNER_LNK', 'https://t.me/Attitude2688')
+UPDATE_CHNL_LNK = _get_env('UPDATE_CHNL_LNK', _get_env('CHNL_LNK', 'https://t.me/bots_up'))
 
 
 # ==============================================================================
@@ -263,9 +264,9 @@ LOG_VR_CHANNEL = int(_get_env('LOG_VR_CHANNEL', '-100'))
 VERIFY_IMG = _get_env("VERIFY_IMG", "https://telegra.ph/file/9ecc5d6e4df5b83424896.jpg")
 
 # Tutorial Links
-TUTORIAL = _get_env("TUTORIAL", "https://t.me/dreamxbotz")
-TUTORIAL_2 = _get_env("TUTORIAL_2", "https://t.me/dreamxbotz")
-TUTORIAL_3 = _get_env("TUTORIAL_3", "https://t.me/dreamxbotz")
+TUTORIAL = _get_env("TUTORIAL", "https://t.me/bots_up")
+TUTORIAL_2 = _get_env("TUTORIAL_2", "https://t.me/bots_up")
+TUTORIAL_3 = _get_env("TUTORIAL_3", "https://t.me/bots_up")
 
 # Primary Shortener
 SHORTENER_WEBSITE = _get_env("SHORTENER_WEBSITE", _get_env("SHORTLINK_URL", ""))
