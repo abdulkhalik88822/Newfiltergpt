@@ -44,6 +44,7 @@ from info import (
 logger = logging.getLogger(__name__)
 
 TOKEN_PATTERN = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{20,}$")
+TOKEN_SEARCH_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])\d{5,}:[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_-])")
 MAX_WELCOME_LENGTH = 500
 CLONE_COMMANDS = (
     BotCommand("start", "Start the bot"),
@@ -55,6 +56,15 @@ CLONE_COMMANDS = (
     BotCommand("myplan", "Check your premium plan"),
 )
 CLONE_FLOWS = {}
+
+
+def _extract_single_bot_token(value):
+    """Accept a pasted token or a BotFather message containing exactly one token."""
+    text = str(value or "").strip()
+    if TOKEN_PATTERN.fullmatch(text):
+        return text
+    matches = set(TOKEN_SEARCH_PATTERN.findall(text))
+    return next(iter(matches)) if len(matches) == 1 else None
 CLONE_SETTINGS_FIELDS = {
     "is_verify", "shortner", "api", "api_two", "api_three", "api_encrypted", "api_two_encrypted", "api_three_encrypted",
     "shortner_two", "shortner_three", "tutorial", "tutorial_2", "tutorial_3",
@@ -483,7 +493,7 @@ async def clone_create_callback(client, query):
     await query.message.reply_text(
         "1) Open <a href='https://t.me/BotFather'>@BotFather</a> and send <code>/newbot</code>.\n"
         "2) Finish BotFather's setup and copy the new bot token.\n"
-        "3) Paste the token here in this private chat. I will validate it, encrypt it, and delete this message if Telegram allows.\n\n"
+        "3) Paste only the token text here, or forward a BotFather message containing exactly one token. I will validate it, encrypt it, and delete your message if Telegram allows.\n\n"
         "Send /cancel to stop. Only submit a token for a bot you own; anyone with a token can control that bot.",
         parse_mode=ParseMode.HTML,
     )
@@ -917,6 +927,8 @@ async def clone_private_flow(client, message):
     flow = CLONE_FLOWS.get(user_id)
     if not flow:
         return
+    if flow.get("processing"):
+        raise StopPropagation
     command = message.command or []
     if command and command[0].split("@", 1)[0].lower() == "cancel":
         CLONE_FLOWS.pop(user_id, None)
@@ -924,20 +936,32 @@ async def clone_private_flow(client, message):
         raise StopPropagation
 
     if flow.get("stage") == "token":
-        token = (message.text or "").strip()
+        if flow.get("processing"):
+            raise StopPropagation
+        raw_token_message = message.text or message.caption or ""
+        token = _extract_single_bot_token(raw_token_message)
+        raw_token_message = ""
         try:
             await message.delete()
         except Exception:
             pass
         if not token:
-            await message.reply_text("Please paste the BotFather token as text, or send /cancel.")
+            now = asyncio.get_running_loop().time()
+            if now - flow.get("last_token_hint_at", 0) >= 5:
+                await message.reply_text(
+                    "Send one active BotFather token as text, or forward a BotFather message that contains exactly one token. "
+                    "For safety, a message with multiple tokens is rejected. Send /cancel to stop."
+                )
+                flow["last_token_hint_at"] = now
             raise StopPropagation
+        flow["processing"] = True
         try:
             record = await clone_manager.create(user_id, token)
         except CloneError as exc:
             logger.info("Clone creation rejected for owner %s (%s)", user_id, type(exc).__name__)
             await message.reply_text(str(exc))
             if "does not look like" in str(exc):
+                flow.pop("processing", None)
                 CLONE_FLOWS[user_id] = flow
             else:
                 CLONE_FLOWS.pop(user_id, None)
