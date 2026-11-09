@@ -4,7 +4,7 @@ import re
 import os
 import random
 import string
-from info import ULTRA_FAST_MODE, MAX_LIST_ELM, BAD_WORDS, LONG_IMDB_DESCRIPTION, IS_VERIFY, MAX_B_TN, TUTORIAL, TUTORIAL_2, TUTORIAL_3, LOG_CHANNEL, TMDB_ON_SEARCH
+from info import ULTRA_FAST_MODE, MAX_LIST_ELM, BAD_WORDS, LONG_IMDB_DESCRIPTION, IS_VERIFY, MAX_B_TN, TUTORIAL, TUTORIAL_2, TUTORIAL_3, LOG_CHANNEL, BIN_CHANNEL, TMDB_ON_SEARCH
 from imdbkit import IMDBKit # pyrefly: ignore 
 import asyncio
 from pyrogram.types import Message, InlineKeyboardButton
@@ -162,6 +162,8 @@ async def is_subscribed(client, user_id, fsub_channels):
     return btn
 
 async def is_check_admin(client, chat_id, user_id):
+    if is_clone_operator(client, user_id):
+        return True
     try:
         member = await client.get_chat_member(chat_id, user_id)
         return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
@@ -503,6 +505,50 @@ async def has_bot_premium_access(client, user_id):
     if client and getattr(client, "is_clone", False):
         return await db.has_clone_premium_access(client.clone_bot_id, user_id)
     return await db.has_premium_access(user_id)
+
+
+def is_clone_operator(client, user_id):
+    """Return whether a user owns or is listed as an operator of this clone."""
+    if not client or not getattr(client, "is_clone", False) or not user_id:
+        return False
+    try:
+        user_id = int(user_id)
+        if user_id == int(getattr(client, "clone_owner_id", 0)):
+            return True
+        admins = (getattr(client, "clone_settings", {}) or {}).get("clone_admins", [])
+        return user_id in {int(admin) for admin in admins}
+    except (TypeError, ValueError):
+        return False
+
+
+def is_clone_access_allowed(client, user_id):
+    """Public clones allow everyone; private clones allow only their operators."""
+    if not client or not getattr(client, "is_clone", False):
+        return True
+    settings = getattr(client, "clone_settings", {}) or {}
+    if str(settings.get("clone_mode", "public")).lower() != "private":
+        return True
+    return is_clone_operator(client, user_id)
+
+
+def get_log_channel(client):
+    """Resolve a clone-specific activity log channel, falling back to host config."""
+    if client and getattr(client, "is_clone", False):
+        try:
+            return int((getattr(client, "clone_settings", {}) or {}).get("clone_log_channel") or LOG_CHANNEL)
+        except (TypeError, ValueError):
+            pass
+    return LOG_CHANNEL
+
+
+def get_database_channel(client):
+    """Resolve a clone-specific file storage channel, falling back to host config."""
+    if client and getattr(client, "is_clone", False):
+        try:
+            return int((getattr(client, "clone_settings", {}) or {}).get("clone_database_channel") or BIN_CHANNEL)
+        except (TypeError, ValueError):
+            pass
+    return BIN_CHANNEL
     
 async def save_group_settings(group_id, key, value, client=None):
     group_id = int(group_id)
