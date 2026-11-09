@@ -3,8 +3,8 @@ import asyncio
 from pyrogram import Client, filters, enums
 from pyrogram.types import LinkPreviewOptions, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import MessageNotModified, FloodWait
-from info import IS_VERIFY, LOG_CHANNEL, CUSTOM_FILE_CAPTION
-from utils import get_settings, save_group_settings, delete_group_setting, is_check_admin
+from info import IS_VERIFY, CUSTOM_FILE_CAPTION
+from utils import get_settings, save_group_settings, delete_group_setting, is_check_admin, get_log_channel
 from database.users_chats_db import db
 
 logger = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ async def change_log(client, query):
         pass
     await save_group_settings(int(grp_id), 'log', int(log_msg.text), client=client)
     try: 
-        await client.send_message(LOG_CHANNEL, f"#Set_Log_Channel\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {chat.title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {query.from_user.username or query.from_user.mention}")
+        await client.send_message(get_log_channel(client), f"#Set_Log_Channel\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {chat.title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {query.from_user.username or query.from_user.mention}")
     except Exception as e:
         logger.error(e)
     btn = [
@@ -350,7 +350,7 @@ async def change_caption(client, query):
     await caption_msg.delete()
     await save_group_settings(int(grp_id), 'caption', caption_msg.text, client=client)
     try: 
-        await client.send_message(LOG_CHANNEL, f"#Set_Caption\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {query.from_user.username or query.from_user.mention}")
+        await client.send_message(get_log_channel(client), f"#Set_Caption\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {query.from_user.username or query.from_user.mention}")
     except Exception as e:
         logger.error(e)
     btn = [
@@ -498,7 +498,7 @@ async def set_shortener(client, query):
     invite_link = await get_invite_link(client, grp_id)
     log_message = f"#New_Shortner_Set\n\n ꜱʜᴏʀᴛɴᴇʀ ɴᴏ - {shortner_num}\nɢʀᴏᴜᴘ ʟɪɴᴋ - `{invite_link}`\n\nɢʀᴏᴜᴘ ɪᴅ : `{grp_id}`\nᴀᴅᴅᴇᴅ ʙʏ - `{user_id}`\nꜱʜᴏʀᴛɴᴇʀ ꜱɪᴛᴇ - {url_msg.text}\nꜱʜᴏʀᴛɴᴇʀ ᴀᴘɪ - `{key_msg.text}`"
     try: 
-        await client.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await client.send_message(get_log_channel(client), log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception as e:
         logger.error(e)
 
@@ -633,7 +633,7 @@ async def set_time(client, query):
     invite_link = await get_invite_link(client, grp_id)
     log_message = f"#New_Time_Set\n\n ᴛɪᴍᴇ ɴᴏ - {time_num}\nɢʀᴏᴜᴘ ʟɪɴᴋ - `{invite_link}`\n\nɢʀᴏᴜᴘ ɪᴅ : `{grp_id}`\nᴀᴅᴅᴇᴅ ʙʏ - `{user_id}`\nᴛɪᴍᴇ - {time_msg.text}"
     try:
-        await client.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await client.send_message(get_log_channel(client), log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception as e:
         logger.error(e)
 
@@ -748,7 +748,7 @@ async def set_tutorial(client, query):
     invite_link = await get_invite_link(client, grp_id)
     log_message = f"#New_Tutorial_Set\n\n ᴛᴜᴛᴏʀɪᴀʟ ɴᴏ - {tutorial_num}\nɢʀᴏᴜᴘ ʟɪɴᴋ - `{invite_link}`\n\nɢʀᴏᴜᴘ ɪᴅ : `{grp_id}`\nᴀᴅᴅᴇᴅ ʙʏ - `{user_id}`\nᴛᴜᴛᴏʀɪᴀʟ - {tutorial_msg.text}"
     try:
-        await client.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await client.send_message(get_log_channel(client), log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception as e:
         logger.error(e)
 

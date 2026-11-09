@@ -16,6 +16,7 @@ from pyrogram import Client, filters, enums, StopPropagation
 from pyrogram.errors import FloodWait, MediaEmpty, UserNotParticipant, ChannelInvalid, PeerIdInvalid, UserIsBlocked, InputUserDeactivated
 from database.ia_filterdb import Media, Media2, get_file_details, unpack_new_file_id, get_bad_files, save_file
 from database.users_chats_db import db
+from plugins.media_handoff import send_catalog_media
 from info import (
     LOG_CHANNEL, IMDB_TEMPLATE, IS_VERIFY, TUTORIAL, TUTORIAL_2, TUTORIAL_3, EMOJI_MODE, REACTIONS,
     VERIFY_IMG, TWO_VERIFY_GAP, UPDATE_CHNL_LNK, PICS, PICS_URL, ADMINS, SUBSCRIPTION, OWNER_LNK , 
@@ -24,7 +25,7 @@ from info import (
     LOG_CHANNEL, SHORTENER_API, SHORTENER_API2, SHORTENER_API3, SHORTENER_WEBSITE, SHORTENER_WEBSITE2, SHORTENER_WEBSITE3,
     TZ
 )
-from utils import get_settings, get_force_sub_channels, has_bot_premium_access, get_bot_username, get_bot_name, get_bot_link, save_group_settings, is_subscribed, is_req_subscribed, get_size, get_shortlink, is_check_admin, temp, get_readable_time, get_time, generate_settings_text, clean_filename, get_random_mix_id
+from utils import get_settings, get_force_sub_channels, has_bot_premium_access, get_bot_username, get_bot_name, get_bot_link, save_group_settings, is_subscribed, is_req_subscribed, get_size, get_shortlink, is_check_admin, temp, get_readable_time, get_time, generate_settings_text, clean_filename, get_random_mix_id, get_log_channel, is_clone_access_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ REQUEST_INVITE_LINK_CACHE: dict[int, str] = {}
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     try:
+        if message.from_user and not is_clone_access_allowed(client, message.from_user.id):
+            return await message.reply_text("This bot is in private mode. Contact its owner for access.")
         if EMOJI_MODE:
             try:
                 asyncio.create_task(message.react(emoji=random.choice(REACTIONS), big=True))
@@ -99,12 +102,12 @@ async def start(client, message):
             await asyncio.sleep(2) 
             if not await db.get_chat(message.chat.id):
                 total=await client.get_chat_members_count(message.chat.id)
-                await client.send_message(LOG_CHANNEL, script.LOG_TEXT_G.format(message.chat.title, message.chat.id, total, "Unknown"))       
+                await client.send_message(get_log_channel(client), script.LOG_TEXT_G.format(message.chat.title, message.chat.id, total, "Unknown"))       
                 await db.add_chat(message.chat.id, message.chat.title)
             return 
         if not await db.is_user_exist(message.from_user.id):
             await db.add_user(message.from_user.id, message.from_user.first_name)
-            await client.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(message.from_user.id, message.from_user.mention))
+            await client.send_message(get_log_channel(client), script.LOG_TEXT_P.format(message.from_user.id, message.from_user.mention))
         if len(message.command) != 2:
             buttons = [[
                         InlineKeyboardButton('🔰 ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ 🔰', url=f'http://t.me/{get_bot_username(client)}?startgroup=true')
@@ -392,24 +395,19 @@ async def start(client, message):
                             f_caption = clean_filename(files1.file_name)
                     if f_caption is None:
                         f_caption = f"{clean_filename(files1.file_name)}"
-                    btn = await stream_buttons(message.from_user.id, file_id)
-                    if files1.file_type == 'video':
-                        msg = await client.send_video(
-                            chat_id=message.from_user.id,
-                            video=file_id,
-                            caption=f_caption,
-                            video_cover=cover,
-                            protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                            reply_markup=InlineKeyboardMarkup(btn)
-                        )
-                    else:
-                        msg = await client.send_cached_media(
-                            chat_id=message.from_user.id,
-                            file_id=file_id,
-                            caption=f_caption,
-                            protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                            reply_markup=InlineKeyboardMarkup(btn)
-                        )
+                    msg = await send_catalog_media(
+                        client,
+                        chat_id=message.from_user.id,
+                        file_id=file_id,
+                        file_type=files1.file_type,
+                        caption=f_caption,
+                        video_cover=cover,
+                        protect_content=settings.get('file_secure', PROTECT_CONTENT),
+                    )
+                    sent_media = getattr(msg, msg.media.value, None) if msg.media else None
+                    sent_file_id = getattr(sent_media, 'file_id', file_id)
+                    btn = await stream_buttons(client, message.from_user.id, sent_file_id)
+                    await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
                     send_allfiles.append(msg)
                 k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
 
@@ -426,6 +424,8 @@ async def start(client, message):
                 return
             except Exception as e:
                 logger.exception("Error in allfiles handler: %s", e)
+                if getattr(client, "is_clone", False):
+                    await message.reply_text("⚠️ This clone could not access the shared file. Add it as an admin in the database/cache channel and try again.")
                 return
 
         settings = await get_settings(int(grp_id), client=client)
@@ -439,28 +439,21 @@ async def start(client, message):
                     if COVERX:
                         cover = details[0].cover if details[0].cover else None
                     is_video = details[0].file_type == 'video'
-                btn = await stream_buttons(message.from_user.id, file_id)
-                if is_video:
-                    msg = await client.send_video(
-                        chat_id=message.from_user.id,
-                        video=file_id,
-                        video_cover=cover,
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                        reply_markup=InlineKeyboardMarkup(btn)
-                    )
-                else:
-                    msg = await client.send_cached_media(
-                        chat_id=message.from_user.id,
-                        file_id=file_id,
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                        reply_markup=InlineKeyboardMarkup(btn)
-                    )
+                msg = await send_catalog_media(
+                    client,
+                    chat_id=message.from_user.id,
+                    file_id=file_id,
+                    file_type="video" if is_video else "document",
+                    video_cover=cover,
+                    protect_content=settings.get('file_secure', PROTECT_CONTENT),
+                )
 
                 filetype = msg.media
                 file = getattr(msg, filetype.value)
                 title = clean_filename(file.file_name)
                 size=get_size(file.file_size)
                 f_caption = f"<code>{title}</code>"
+                btn = await stream_buttons(client, message.from_user.id, file.file_id)
                 settings = await get_settings(int(grp_id), client=client)
                 DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
                 if DREAMX_CAPTION:
@@ -482,6 +475,8 @@ async def start(client, message):
                 return await message.reply('<b>⚠️ ꜰɪʟᴇ ɪꜱ ᴄᴜʀʀᴇɴᴛʟʏ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ. ᴘʟᴇᴀꜱᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ!</b>')
             except Exception as e:
                 logger.exception("Error in file details: %s", e)
+                if getattr(client, "is_clone", False):
+                    return await message.reply_text(f"⚠️ Clone file delivery failed: {str(e)[:180]}")
                 pass
             return await message.reply('<b>❌ ɴᴏ ꜱᴜᴄʜ ꜰɪʟᴇ ᴇxɪꜱᴛꜱ !</b>')
 
@@ -500,24 +495,19 @@ async def start(client, message):
                 f_caption = clean_filename(files.file_name)
         if f_caption is None:
             f_caption = clean_filename(files.file_name)
-        btn = await stream_buttons(message.from_user.id, file_id)
-        if files.file_type == 'video':
-            msg = await client.send_video(
-                chat_id=message.from_user.id,
-                video=file_id,
-                caption=f_caption,
-                video_cover=cover,
-                protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                reply_markup=InlineKeyboardMarkup(btn)
-            )
-        else:
-            msg = await client.send_cached_media(
-                chat_id=message.from_user.id,
-                file_id=file_id,
-                caption=f_caption,
-                protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                reply_markup=InlineKeyboardMarkup(btn)
-            )
+        msg = await send_catalog_media(
+            client,
+            chat_id=message.from_user.id,
+            file_id=file_id,
+            file_type=files.file_type,
+            caption=f_caption,
+            video_cover=cover,
+            protect_content=settings.get('file_secure', PROTECT_CONTENT),
+        )
+        sent_media = getattr(msg, msg.media.value, None) if msg.media else None
+        sent_file_id = getattr(sent_media, 'file_id', file_id)
+        btn = await stream_buttons(client, message.from_user.id, sent_file_id)
+        await msg.edit_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
         
         k = await msg.reply(script.DEL_MSG.format(get_time(settings.get('delete_time', DELETE_TIME))), parse_mode=enums.ParseMode.HTML)
         if settings.get('auto_delete'):
@@ -533,9 +523,11 @@ async def start(client, message):
         return await message.reply('<b>⚠️ ꜰɪʟᴇ ɪꜱ ᴄᴜʀʀᴇɴᴛʟʏ ᴜɴᴀᴠᴀɪʟᴀʙʟᴇ. ᴘʟᴇᴀꜱᴇ ᴛʀʏ ᴀɢᴀɪɴ ʟᴀᴛᴇʀ!</b>')
     except Exception as e:
         logger.exception(f"Error In /start command - {e}")
+        if getattr(client, "is_clone", False):
+            return await message.reply_text(f"⚠️ Clone file delivery failed: {str(e)[:180]}")
         pass
 
-async def stream_buttons(user_id: int, file_id: str):
+async def stream_buttons(client, user_id: int, file_id: str):
     if STREAM_MODE and not PREMIUM_STREAM_MODE:
         return [
             [InlineKeyboardButton('🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data=f'generate_stream_link:{file_id}')],
@@ -1099,7 +1091,7 @@ async def save_caption(client, message):
         return await message.reply_text("<code>ɢɪᴠᴇ ᴍᴇ ᴀ ᴄᴀᴘᴛɪᴏɴ ᴀʟᴏɴɢ ᴡɪᴛʜ ɪᴛ.\n\nᴇxᴀᴍᴘʟᴇ -\n\nꜰᴏʀ ꜰɪʟᴇ ɴᴀᴍᴇ ꜱᴇɴᴅ <code>{file_name}</code>\nꜰᴏʀ ꜰɪʟᴇ ꜱɪᴢᴇ ꜱᴇɴᴅ <code>{file_size}</code>\n\n<code>/set_caption {file_name}</code></code>")
     await save_group_settings(grp_id, 'caption', caption, client=client)
     await message.reply_text(f"ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴄʜᴀɴɢᴇᴅ ᴄᴀᴘᴛɪᴏɴ ꜰᴏʀ {title}\n\nᴄᴀᴘᴛɪᴏɴ - {caption}", link_preview_options=LinkPreviewOptions(is_disabled=True))
-    await client.send_message(LOG_CHANNEL, f"#Set_Caption\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
+    await client.send_message(get_log_channel(client), f"#Set_Caption\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ: {grp_id}\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 
 
 @Client.on_message(filters.command(["set_tutorial", "set_tutorial_2", "set_tutorial_3"]))
@@ -1133,8 +1125,7 @@ async def set_tutorial(client, message: Message):
         f"ʟɪɴᴋ - {tutorial_link}",
         link_preview_options=LinkPreviewOptions(is_disabled=True)
     )
-    await client.send_message(
-        LOG_CHANNEL,
+    await client.send_message(get_log_channel(client),
         f"#Set_{tutorial_key.title()}_Video\n\n"
         f"ɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n"
         f"ɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n"
@@ -1173,7 +1164,7 @@ async def handle_shortner_command(c, m, shortner_key, api_key, log_prefix, fallb
             f"\n\nꜱɪᴛᴇ - {URL}\n\nᴀᴘɪ - `{API}`"
             f"\n\nɢʀᴏᴜᴘ - {grp_link}\nɢʀᴏᴜᴘ ɪᴅ - `{grp_id}`"
         )
-        await c.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await c.send_message(get_log_channel(c), log_message, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except Exception as e:
         await save_group_settings(grp_id, shortner_key, fallback_url, client=c)
         await save_group_settings(grp_id, api_key, fallback_api, client=c)
@@ -1232,7 +1223,7 @@ async def set_log(client, message):
     link = (await client.get_chat(message.chat.id)).invite_link
     grp_link = f"[{message.chat.title}]({link})"
     log_message = f"#New_Log_Channel_Set\n\nɴᴀᴍᴇ - {user_info}\n\nɪᴅ - `{user_id}`\n\nʟᴏɢ ᴄʜᴀɴɴᴇʟ ɪᴅ - `{log}`\nɢʀᴏᴜᴘ ʟɪɴᴋ - `{grp_link}`\n\nɢʀᴏᴜᴘ ɪᴅ : `{grp_id}`"
-    await client.send_message(LOG_CHANNEL, log_message, link_preview_options=LinkPreviewOptions(is_disabled=True)) 
+    await client.send_message(get_log_channel(client), log_message, link_preview_options=LinkPreviewOptions(is_disabled=True)) 
 
 
 @Client.on_message(filters.command('set_time'))
@@ -1251,7 +1242,7 @@ async def set_time(client, message):
         return await message.reply_text("<b>ᴄᴏᴍᴍᴀɴᴅ ɪɴᴄᴏᴍᴘʟᴇᴛᴇ\n\nᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ ᴛʜɪꜱ - <code>/set_time 600</code> [ ᴛɪᴍᴇ ᴍᴜꜱᴛ ʙᴇ ɪɴ ꜱᴇᴄᴏɴᴅꜱ ]</b>")   
     await save_group_settings(grp_id, 'verify_time', time, client=client)
     await message.reply_text(f"<b>✅️ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ꜱᴇᴛ 2ɴᴅ ᴠᴇʀɪꜰʏ ᴛɪᴍᴇ ꜰᴏʀ {title}\n\nᴛɪᴍᴇ - <code>{time}</code></b>")
-    await client.send_message(LOG_CHANNEL, f"#Set_2nd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
+    await client.send_message(get_log_channel(client), f"#Set_2nd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 @Client.on_message(filters.command('set_time_2'))
 async def set_time_2(client, message):
     chat_type = message.chat.type
@@ -1268,7 +1259,7 @@ async def set_time_2(client, message):
         return await message.reply_text("<b>ᴄᴏᴍᴍᴀɴᴅ ɪɴᴄᴏᴍᴘʟᴇᴛᴇ\n\nᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ʟɪᴋᴇ ᴛʜɪꜱ - <code>/set_time 3600</code> [ ᴛɪᴍᴇ ᴍᴜꜱᴛ ʙᴇ ɪɴ ꜱᴇᴄᴏɴᴅꜱ ]</b>")   
     await save_group_settings(grp_id, 'third_verify_time', time, client=client)
     await message.reply_text(f"<b>✅️ ꜱᴜᴄᴄESꜱꜰᴜʟʟʏ ꜱᴇᴛ 3ʀᴅ ᴠᴇʀɪꜰʏ ᴛɪᴍᴇ ꜰᴏʀ {title}\n\nᴛɪᴍᴇ - <code>{time}</code></b>")
-    await client.send_message(LOG_CHANNEL, f"#Set_3rd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
+    await client.send_message(get_log_channel(client), f"#Set_3rd_Verify_Time\n\nɢʀᴏᴜᴘ ɴᴀᴍᴇ : {title}\n\nɢʀᴏᴜᴘ ɪᴅ : {grp_id}\n\nɪɴᴠɪᴛᴇ ʟɪɴᴋ : {invite_link}\n\nᴜᴘᴅᴀᴛᴇᴅ ʙʏ : {message.from_user.username}")
 
 
 @Client.on_message(filters.command('details'))
@@ -1396,8 +1387,7 @@ async def set_fsub(client, message):
         await save_group_settings(grp_id, 'fsub', fsub_ids, client=client)
         await message.reply_text(f"sᴜᴄᴄᴇssғᴜʟʟʏ sᴇᴛ ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟ(ꜱ) ғᴏʀ {title} ᴛᴏ\n\n{channels}")
         mention = message.from_user.mention if message.from_user else "Unknown"
-        await client.send_message(
-            LOG_CHANNEL,
+        await client.send_message(get_log_channel(client),
             f"#Fsub_Channel_set\n\n"
             f"ᴜꜱᴇʀ - {mention} ꜱᴇᴛ ᴛʜᴇ ꜰᴏʀᴄᴇ ᴄʜᴀɴɴᴇʟ(ꜱ) ꜰᴏʀ {title}:\n\n"
             f"ꜰꜱᴜʙ ᴄʜᴀɴɴᴇʟ(ꜱ):\n" + '\n'.join(channel_titles)
@@ -1405,7 +1395,7 @@ async def set_fsub(client, message):
     except Exception as e:
         err_text = f"⚠️ Error in set_fSub :\n{e}"
         logger.error(err_text)
-        await client.send_message(LOG_CHANNEL, err_text)
+        await client.send_message(get_log_channel(client), err_text)
 
 @Client.on_message(filters.private & filters.command("resetallgroup") & filters.user(ADMINS))
 async def reset_all_settings(client, message):
@@ -1466,8 +1456,7 @@ async def remove_fsub(client, message):
         if option.lower() == "all":
             await save_group_settings(grp_id, 'fsub', [], client=client)
             await message.reply_text(f"✅ ᴀʟʟ ғsᴜʙ ᴄʜᴀɴɴᴇʟs ʀᴇᴍᴏᴠᴇᴅ ғᴏʀ {title}")
-            return await client.send_message(
-                LOG_CHANNEL,
+            return await client.send_message(get_log_channel(client),
                 f"#ғsᴜʙ_ʀᴇᴍᴏᴠᴇᴅ\n\n👤 {user.mention} ʀᴇᴍᴏᴠᴇᴅ ᴀʟʟ ғsᴜʙ ᴄʜᴀɴɴᴇʟs ғᴏʀ {title}."
             )
         try:
@@ -1492,8 +1481,7 @@ async def remove_fsub(client, message):
             f"✅ ʀᴇᴍᴏᴠᴇᴅ {len(r_id)} ғsᴜʙ ᴄʜᴀɴɴᴇʟ(s) ғʀᴏᴍ {title}:\n" +
             "\n".join(r_t)
         )
-        await client.send_message(
-            LOG_CHANNEL,
+        await client.send_message(get_log_channel(client),
             f"#ғsᴜʙ_ᴄʜᴀɴɴᴇʟ_ʀᴇᴍᴏᴠᴇᴅ\n\n👤 {user.mention} ʀᴇᴍᴏᴠᴇᴅ ғsᴜʙ ᴄʜᴀɴɴᴇʟ(s) ғʀᴏᴍ {title}:\n" +
             "\n".join(r_t)
         )

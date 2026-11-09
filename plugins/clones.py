@@ -14,6 +14,7 @@ from pyrogram.enums import ParseMode
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from database.users_chats_db import db
+from utils import is_clone_access_allowed
 from info import (
     API_HASH,
     API_ID,
@@ -52,6 +53,7 @@ CLONE_SETTINGS_FIELDS = {
     "auto_delete", "delete_time", "custom_button_text", "custom_button_url",
     "custom_buttons", "shortener_enabled", "second_verification", "fsub_enabled",
     "premium_enabled", "premium_plans", "premium_text",
+    "clone_log_channel", "clone_database_channel", "clone_admins", "clone_mode",
 }
 SETTING_PROMPTS = {
     "shortener": "Send six lines: website 1, API key 1, website 2, API key 2, website 3, API key 3. For an unused pair send <code>-</code> on both lines. The first pair is required.",
@@ -92,6 +94,10 @@ DEFAULT_CLONE_SETTINGS = {
     "premium_enabled": True,
     "premium_plans": dict(STAR_PREMIUM_PLANS),
     "premium_text": "",
+    "clone_log_channel": None,
+    "clone_database_channel": None,
+    "clone_admins": [],
+    "clone_mode": "public",
 }
 
 
@@ -312,6 +318,7 @@ class CloneManager:
                         type(exc).__name__,
                     )
             await db.delete_clone_premium_users(record["_id"])
+            await db.delete_clone_group_settings(record["_id"])
             await db.delete_clone_bot(record["_id"], record["owner_id"])
 
     async def set_welcome(self, record, welcome):
@@ -868,6 +875,9 @@ async def clone_private_flow(client, message):
     # Clones get a per-bot welcome page while their other search commands use
     # the same plugin set as the primary file bot.
     if getattr(client, "is_clone", False):
+        if not is_clone_access_allowed(client, user_id):
+            await message.reply_text("This bot is in private mode. Contact its owner for access.")
+            raise StopPropagation
         command = message.command or []
         if command and command[0].split("@", 1)[0].lower() == "start" and len(command) == 1:
             welcome = getattr(client, "clone_welcome", "")

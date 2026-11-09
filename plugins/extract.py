@@ -12,7 +12,7 @@ from telegraph import Telegraph
 from pymediainfo import MediaInfo
 
 from database.ia_filterdb import get_file_details
-from info import BIN_CHANNEL
+from utils import get_database_channel
 from dreamxbotz.util.file_properties import get_name
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ async def extract_data_handler(client: Client, query: CallbackQuery):
             log_msg = query.message
         else:
             log_msg = await client.send_cached_media(
-                chat_id=BIN_CHANNEL,
+                chat_id=get_database_channel(client),
                 file_id=file_id
             )
 

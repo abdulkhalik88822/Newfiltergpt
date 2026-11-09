@@ -6,10 +6,10 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import LinkPreviewOptions, InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.errors.exceptions.bad_request_400 import MessageTooLong, PeerIdInvalid
 from pyrogram.errors import ChatAdminRequired
-from info import ADMINS, MULTIPLE_DB, LOG_CHANNEL, OWNER_LNK, MELCOW_PHOTO
+from info import ADMINS, MULTIPLE_DB, OWNER_LNK, MELCOW_PHOTO
 from database.users_chats_db import db
 from database.ia_filterdb import Media, Media2, db as db_stats, db2 as db2_stats, client as mongo_client, client2 as mongo_client2
-from utils import get_size, temp, get_settings, get_readable_time
+from utils import get_size, temp, get_settings, get_readable_time, get_log_channel
 from Script import script
 from bot import botStartTime
 
@@ -24,7 +24,7 @@ async def save_group(client, message):
         if not await db.get_chat(message.chat.id):
             total=await client.get_chat_members_count(message.chat.id)
             dreamx_botz = message.from_user.mention if message.from_user else "Anonymous" 
-            await client.send_message(LOG_CHANNEL, script.LOG_TEXT_G.format(message.chat.title, message.chat.id, total, dreamx_botz))       
+            await client.send_message(get_log_channel(client), script.LOG_TEXT_G.format(message.chat.title, message.chat.id, total, dreamx_botz))       
             await db.add_chat(message.chat.id, message.chat.title)
         if message.chat.id in temp.BANNED_CHATS:
 

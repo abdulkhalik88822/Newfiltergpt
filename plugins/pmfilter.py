@@ -1,6 +1,6 @@
 import logging
 import html
-from utils import LimitedDict, get_random_mix_id, get_size, is_subscribed, is_req_subscribed, group_setting_buttons, get_poster, get_posterx, temp, get_settings, get_force_sub_channels, get_clone_star_plans, get_bot_username, get_bot_name, get_bot_link, save_group_settings, get_cap, imdb, is_check_admin, extract_request_content, clean_filename, generate_season_variations, clean_search_text, get_settings_text
+from utils import LimitedDict, get_random_mix_id, get_size, is_subscribed, is_req_subscribed, group_setting_buttons, get_poster, get_posterx, temp, get_settings, get_force_sub_channels, get_clone_star_plans, get_bot_username, get_bot_name, get_bot_link, save_group_settings, get_cap, imdb, is_check_admin, extract_request_content, clean_filename, generate_season_variations, clean_search_text, get_settings_text, is_clone_access_allowed, get_log_channel, get_database_channel
 from rapidfuzz import process
 from dreamxbotz.util.file_properties import get_name, get_hash
 from urllib.parse import quote_plus
@@ -8,11 +8,11 @@ from urllib.parse import quote_plus
 from database.ia_filterdb import Media, Media2, get_search_results, get_bad_files
 from database.config_db import mdb
 from pyrogram.errors import MessageIdInvalid, UserIsBlocked, MessageNotModified, PeerIdInvalid, MessageDeleteForbidden
-from pyrogram import Client, filters, enums
+from pyrogram import Client, filters, enums, StopPropagation
 from pyrogram.types import LinkPreviewOptions, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
 from info import (
-    ADMINS, AUTH_REQ_CHANNELS, BIN_CHANNEL, DELETE_TIME,
-    EMOJI_MODE, GRP_LNK, LANDSCAPE_POSTER, LANGUAGES, LOG_CHANNEL, MAX_B_TN, MSG_ALRT,
+    ADMINS, AUTH_REQ_CHANNELS, DELETE_TIME,
+    EMOJI_MODE, GRP_LNK, LANDSCAPE_POSTER, LANGUAGES, MAX_B_TN, MSG_ALRT,
     MULTIPLE_DB, NO_RESULTS_MSG, OWNER_LNK, OWNER_UPI_ID, PICS, PICS_URL, QR_CODE, QUALITIES,
     REACTIONS, REQST_CHANNEL, SEASONS, STAR_PREMIUM_PLANS, SUBSCRIPTION, SUPPORT_CHAT_ID,
     TMDB_ON_SEARCH, TMDB_POSTER, ULTRA_FAST_MODE, UPDATE_CHNL_LNK, URL,
@@ -41,9 +41,18 @@ SEARCH_CLEAN_REGEX = re.compile(
 )
 PREFIX_COMMAND_REGEX = re.compile(r"^[\/,!.\U0001F600-\U000E007F]")
 
+@Client.on_callback_query(group=-100)
+async def private_clone_callback_gate(client, query):
+    if getattr(client, "is_clone", False) and query.from_user and not is_clone_access_allowed(client, query.from_user.id):
+        await query.answer("This bot is in private mode.", show_alert=True)
+        raise StopPropagation
+
+
 @Client.on_message(filters.group & filters.text & filters.incoming & ~filters.regex(r"^/") )
 async def give_filter(client, message):
     if not message.from_user:
+        return
+    if not is_clone_access_allowed(client, message.from_user.id):
         return
     if EMOJI_MODE:
         try:
@@ -87,6 +96,8 @@ async def pm_text(client, message):
     content = message.text
     user = message.from_user.first_name
     user_id = message.from_user.id
+    if not is_clone_access_allowed(client, user_id):
+        return await message.reply_text("This bot is in private mode. Contact its owner for access.")
     if EMOJI_MODE:
         try:
             asyncio.create_task(message.react(emoji=random.choice(REACTIONS), big=True))
@@ -106,7 +117,7 @@ async def pm_text(client, message):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 ʀᴇǫᴜᴇsᴛ ʜᴇʀᴇ ", url=GRP_LNK)]])
             )
             await client.send_message(
-                chat_id=LOG_CHANNEL,
+                chat_id=get_log_channel(client),
                 text=script.PM_LOG_TXT.format(user, user_id, content)
             )
     except Exception:
@@ -375,7 +386,7 @@ async def advantage_spoll_choker(client, query):
         reqstr = await client.get_users(reqstr1)
         if NO_RESULTS_MSG:
             try:
-                await client.send_message(chat_id=BIN_CHANNEL, text=script.NORSLTS.format(reqstr.id, reqstr.mention, movie))
+                await client.send_message(chat_id=get_database_channel(client), text=script.NORSLTS.format(reqstr.id, reqstr.mention, movie))
             except Exception as e:
                 logger.error("Error In Spol: %s — Make Sure Bot Admin BIN CHANNEL", e)
         btn = InlineKeyboardMarkup(
@@ -718,7 +729,7 @@ async def seasons_cb_handler(client: Client, query: CallbackQuery):
 
     btn.insert(
         0,
-        [InlineKeyboardButton("⇊ ꜱᴇʟᴇᴄᴛ ꜱᴇᴀꜱᴏɴ ⇊", callback_data="ident")],
+        [InlineKeyboardButton("⇊ ꜱᴇʟᴇᴄᴛ ꜱᴇᴀꜱᴏɴ ⇊", callback_data="ident")],
     )
     btn.append([InlineKeyboardButton(text="↭ ʙᴀᴄᴋ ᴛᴏ ꜰɪʟᴇs ​↭",
                callback_data=f"next_{req}_{key}_{offset}")])
@@ -1131,10 +1142,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         try:
             user_id = query.from_user.id
             username = query.from_user.mention
-            log_msg = await client.send_cached_media(chat_id=BIN_CHANNEL, file_id=file_id,)
+            log_msg = await client.send_cached_media(chat_id=get_database_channel(client), file_id=file_id,)
             fileName = quote_plus(get_name(log_msg))
-            dreamx_stream = f"{URL}watch/{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
-            dreamx_download = f"{URL}{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?hash={get_hash(log_msg)}"
+            channel_id = int(get_database_channel(client))
+            dreamx_stream = f"{URL}watch/{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?channel={channel_id}&hash={get_hash(log_msg)}"
+            dreamx_download = f"{URL}{str(log_msg.id)}/{quote_plus(get_name(log_msg))}?channel={channel_id}&hash={get_hash(log_msg)}"
             await query.answer(MSG_ALRT)
             await asyncio.sleep(1)
             await log_msg.reply_text(
@@ -1518,7 +1530,7 @@ async def auto_filter(client, msg, spoll=False):
             message = msg.message.reply_to_message
             search, files, offset, total_results = spoll
             m = await message.reply_text(script.SEARCHING_TXT.format(search))
-            settings = await get_settings(message.chat.id, client=client)
+                settings = await get_settings(message.chat.id, client=client)
             await msg.message.delete()
         bot_scope = getattr(getattr(client, "me", None), "id", temp.ME)
         key = f"{bot_scope}-{message.chat.id}-{message.id}"

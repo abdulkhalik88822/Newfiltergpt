@@ -35,7 +35,8 @@ async def watch_handler(request: web.Request):
         else:
             id = int(re.search(r"(\d+)(?:\/\S+)?", path).group(1))
             secure_hash = request.rel_url.query.get("hash")
-        return web.Response(text=await render_page(id, secure_hash), content_type='text/html')
+        channel_id = request.rel_url.query.get("channel")
+        return web.Response(text=await render_page(id, secure_hash, channel_id=channel_id), content_type='text/html')
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -63,7 +64,7 @@ async def stream_handler(request: web.Request):
             id = int(id_match.group(1))
             secure_hash = request.rel_url.query.get("hash")
         
-        return await media_streamer(request, id, secure_hash)
+        return await media_streamer(request, id, secure_hash, request.rel_url.query.get("channel"))
     except InvalidHash as e:
         raise web.HTTPForbidden(text=e.message)
     except FIleNotFound as e:
@@ -78,7 +79,7 @@ async def stream_handler(request: web.Request):
 
 class_cache = {}
 
-async def media_streamer(request: web.Request, id: int, secure_hash: str):
+async def media_streamer(request: web.Request, id: int, secure_hash: str, channel_id=None):
     range_header = request.headers.get("Range", 0)
     
     index = min(work_loads, key=work_loads.get)
@@ -87,13 +88,15 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
     if info.MULTI_CLIENT:
         logger.info(f"Client {index} is now serving {request.remote}")
 
-    if faster_client in class_cache:
-        tg_connect = class_cache[faster_client]
+    channel_id = int(channel_id or info.BIN_CHANNEL)
+    cache_key = (faster_client, channel_id)
+    if cache_key in class_cache:
+        tg_connect = class_cache[cache_key]
         logger.debug(f"Using cached ByteStreamer object for client {index}")
     else:
         logger.debug(f"Creating new ByteStreamer object for client {index}")
-        tg_connect = ByteStreamer(faster_client)
-        class_cache[faster_client] = tg_connect
+        tg_connect = ByteStreamer(faster_client, channel_id=channel_id)
+        class_cache[cache_key] = tg_connect
     file_id = await tg_connect.get_file_properties(id)
     
     if file_id.unique_id[:6] != secure_hash:
