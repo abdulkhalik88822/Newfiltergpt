@@ -36,6 +36,7 @@ class Database:
         self.clone_verification = self.db.clone_verification
         self.clone_verify_ids = self.db.clone_verify_ids
         self.clone_group_settings = self.db.clone_group_settings
+        self.clone_media_cache = self.db.clone_media_cache
 
     async def add_name(self, filename):
         if await self.movie_updates.find_one({'_id': filename}):
@@ -563,6 +564,26 @@ class Database:
 
     async def delete_clone_premium_users(self, bot_id):
         return await self.clone_premium_users.delete_many({'bot_id': int(bot_id)})
+
+    async def delete_clone_group_settings(self, bot_id):
+        return await self.clone_group_settings.delete_many({'bot_id': int(bot_id)})
+
+    async def get_clone_media_cache(self, cache_key):
+        return await self.clone_media_cache.find_one({'_id': str(cache_key)})
+
+    async def set_clone_media_cache(self, cache_key, channel_id, message_id):
+        return await self.clone_media_cache.update_one(
+            {'_id': str(cache_key)},
+            {'$set': {
+                'channel_id': int(channel_id),
+                'message_id': int(message_id),
+                'updated_at': datetime.datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+
+    async def delete_clone_media_cache(self, cache_key):
+        return await self.clone_media_cache.delete_one({'_id': str(cache_key)})
 
     async def delete_clone_bot(self, bot_id, owner_id):
         return await self.clone_bots.delete_one(
